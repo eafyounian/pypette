@@ -7,7 +7,7 @@ Pypette is a collection of command line utilities and libraries for analyzing bi
   * Gene expression quantification
   * Copy number analysis
   * Mutation analysis
-  * Chromosomal rearrangement analysis
+  * [Chromosomal rearrangement analysis](wiki/Detecting-chromosomal-rearrangements)
   * FASTA, VCF and SAM file manipulation
   * Other miscellaneous functionality
 
