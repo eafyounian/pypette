@@ -25,5 +25,5 @@ To install Pypette, download the latest release and extract it to a folder. Then
 Examples
 --------
 
-### Chromosomal rearrangement discovery
+#### Chromosomal rearrangement discovery
 
