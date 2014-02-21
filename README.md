@@ -28,14 +28,18 @@ Examples
 #### Chromosomal rearrangements
 
 Identify structural variants based on read pairs and split reads. Split reads must overlap at least 25bp on both sides of the breakpoint:
+
     breakfast detect -a25 test.bam test
     breakfast detect -a25 control.bam control
 
 Construct a blacklist of false positive regions based on the control sample:
+
     breakfast blacklist control.sv > blacklist.txt
 
 Only keep structural variants with at least one read pair and three split reads of evidence, or at least 10 split reads (one -r option must be satisfied). Also discard blacklisted structural variants found in the control:
+
     breakfast filter -r 1-3-0 -r 0-10-0 --blacklist=blacklist.txt test.sv > filtered.sv
 
 Annotate structural variants with information about nearby genes:
+
     breakfast annotate -b ensembl.bed filtered.sv > annotated.sv
