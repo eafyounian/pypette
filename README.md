@@ -21,3 +21,9 @@ To install Pypette, download the latest release and extract it to a folder. Then
     cd pypette-0.6
     make
     export PATH=/some/folder/pypette-0.6/bin:$PATH
+
+Examples
+--------
+
+### Chromosomal rearrangement discovery
+
