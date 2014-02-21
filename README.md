@@ -9,7 +9,7 @@ Pypette is a collection of command line utilities and libraries for analyzing bi
   * FASTA, VCF and SAM file manipulation
   * Other miscellaneous functionality
 
-Pypette has no dependencies beyond Python and [samtools](http://samtools.sourceforge.net/). For performance reasons, it is recommended that the software is run using [PyPy](http://pypy.org/), a high performance implementation of the Python language. You can build PyPy from [source](http://pypy.org/download.html#building-from-source), or download [portable binaries](https://github.com/squeaky-pl/portable-pypy).  
+Pypette has no dependencies beyond Python and [samtools](https://github.com/samtools/samtools). For performance reasons, it is recommended that the software is run using [PyPy](http://pypy.org/), a high performance implementation of the Python language. You can build PyPy from [source](http://pypy.org/download.html#building-from-source), or download [portable binaries](https://github.com/squeaky-pl/portable-pypy).  
 
 Installation
 ------------
