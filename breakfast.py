@@ -5,8 +5,10 @@ BreakFast is a toolkit for detecting chromosomal rearrangements
 based on whole genome sequencing data.
 
 Usage:
-breakfast detect <bam_file> <out_prefix> [-a N] [-q N] [-d N] [-O orient]
-breakfast detect specific [-A] <bam_file> <donors> <acceptors> <genome> <out_prefix>
+breakfast detect <bam_file> <genome_path> <out_prefix> [-a N] [-q N]
+	[-d N] [-O orientation]
+breakfast detect specific [-A] <bam_file> <donors> <acceptors> <genome>
+	<out_prefix>
 breakfast filter <sv_file> [-r P-S-A]... [--blacklist=PATH]
 breakfast annotate <sv_file> --bed=PATH
 breakfast blacklist [--freq-above=FREQ] <sv_files>...
@@ -23,8 +25,8 @@ Options:
                           split reads are not used [default: 0].
   -q, --min-mapq=N        Minimum mapping quality to consider [default: 15].
   -d, --min-distance=N    Min kb distance between breakpoints [default: 10].
-  -O, --orientation=OR    Read pair orientation produced by sequencer
-                          [default: converging].
+  -O, --orientation=OR    Read pair orientation produced by sequencer. Either
+                          'converging' or 'diverging' [default: converging].
   -A, --all-reads         Use all reads for rearrangement detection, not just
                           unaligned reads.
 
@@ -97,14 +99,16 @@ def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
 	
 	out = zopen(out_prefix + '.discordant_pairs.tsv.gz', 'w')
 	N = 0
+
+	sort_tmp_dir = os.path.dirname(out_prefix)
+	if not sort_tmp_dir: sort_tmp_dir = './'
 	
 	# Go through all the first mates and look for discordant pairs.
 	info('Searching for discordant read pairs...')
 	prev = ['']
 	for line in shell_stdout(
 		'sam discordant pairs -q%d %s %d | sort -k1,1 -T %s' %
-		(min_mapq, sam_path, min_rearrangement_size / 1000,
-		os.path.dirname(out_prefix))):
+		(min_mapq, sam_path, min_rearrangement_size / 1000, sort_tmp_dir)):
 		
 		al = line.split('\t')
 		if len(al) < 9: continue
@@ -172,7 +176,7 @@ def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
 
 
 
-def detect_discordant_mates(sam_path, out_prefix, anchor_len,
+def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 	min_rearrangement_size):
 	
 	out = zopen(out_prefix + '.discordant_singles.tsv.gz', 'w')
@@ -189,8 +193,9 @@ def detect_discordant_mates(sam_path, out_prefix, anchor_len,
 		'~/tools/bowtie-indexes/homo_sapiens/hg19 -'
 		% (sam_path, anchor_len))
 	
-	# FIXME: Don't prefetch 3 Gb, change this to random I/O access.
-	chromosomes = read_flat_seq('/data/csb/organisms/homo_sapiens/hg19_flat')
+	# FIXME: Would be nice to do this one chromosome at a time, so we wouldn't
+	# need to use 3 gigabytes of memory.
+	chromosomes = read_flat_seq(genome_path)
 	
 	prev = ['']
 	for line in anchor_alignments:
@@ -308,7 +313,7 @@ def detect_discordant_mates(sam_path, out_prefix, anchor_len,
 
 
 
-def detect_rearrangements(sam_path, out_prefix, anchor_len,
+def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 	min_rearrangement_size, min_mapq, discard_pcr_duplicates=True):
 	
 	if not os.path.exists(sam_path):
@@ -320,7 +325,7 @@ def detect_rearrangements(sam_path, out_prefix, anchor_len,
 	
 	# Execute split read analysis if the user has specified an anchor length.
 	if anchor_len > 0:
-		detect_discordant_mates(sam_path, out_prefix, anchor_len,
+		detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 			min_rearrangement_size=min_rearrangement_size)
 	
 	info('Sorting discordant pairs by chromosomal position...')
@@ -914,7 +919,8 @@ if __name__ == '__main__':
 		detect_specific(args['<bam_file>'], args['<donors>'],
 			args['<acceptors>'], args['<genome>'], args['<out_prefix>'], all_reads=args['--all-reads'])
 	elif args['detect']:
-		detect_rearrangements(args['<bam_file>'], args['<out_prefix>'],
+		detect_rearrangements(args['<bam_file>'], args['<genome_path>'],
+			args['<out_prefix>'],
 			anchor_len=int(args['--anchor-len']),
 			min_mapq=int(args['--min-mapq']),
 			min_rearrangement_size=int(args['--min-distance'])*1000)
