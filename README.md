@@ -27,10 +27,14 @@ Examples
 
 #### Chromosomal rearrangements
 
+Create a flattened genome FASTA file for use in split read analysis:
+
+    fasta flatten hg19.fa hg19_flat
+
 Identify structural variants based on read pairs and split reads. Split reads must overlap at least 25bp on both sides of the breakpoint:
 
-    breakfast detect -a25 test.bam test
-    breakfast detect -a25 control.bam control
+    breakfast detect -a25 test.bam hg19_flat test
+    breakfast detect -a25 control.bam hg19_flat control
 
 Construct a blacklist of false positive regions based on the control sample:
 
