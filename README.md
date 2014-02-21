@@ -1,3 +1,6 @@
+Introduction
+------------
+
 Pypette is a collection of command line utilities and libraries for analyzing biological data. Current functionality includes:
   * Gene expression quantification
   * Copy number analysis
