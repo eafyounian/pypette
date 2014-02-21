@@ -16,11 +16,11 @@ Installation
 
 To install Pypette, download the latest release and extract it to a folder. Then run the Makefile and add the subfolder bin/ to your PATH. See below for an example:
 
-    wget https://github.com/annalam/pypette/archive/pypette-0.6.tar.gz
-    tar -xzf pypette-0.6.tar.gz
-    cd pypette-0.6
+    wget https://github.com/annalam/pypette/archive/0.7.tar.gz
+    tar -xzf pypette-0.7.tar.gz
+    cd pypette-0.7
     make
-    export PATH=/some/folder/pypette-0.6/bin:$PATH
+    export PATH=/some/folder/pypette-0.7/bin:$PATH
 
 Examples
 --------
