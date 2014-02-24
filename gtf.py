@@ -31,7 +31,7 @@ def gtf_to_gene_bed(gtf_path):
 	gene_id_to_name = {}
 	gene_exons = {}
 	
-	gtf_file = open(gtf_path)
+	gtf_file = zopen(gtf_path)
 	for line in gtf_file:
 		tokens = line.split('\t')
 		if not tokens[2] == 'exon': continue
@@ -57,9 +57,9 @@ def gtf_to_gene_bed(gtf_path):
 		
 	for gene_id, exons in gene_exons.iteritems():
 		if not all([exon[0] == exons[0][0] for exon in exons]):
-			print('Chromosome confusion detected.')
+			info('Chromosome confusion detected.')
 		if not all([exon[1] == exons[0][1] for exon in exons]):
-			print('Strand confusion detected.')
+			info('Strand confusion detected.')
 		
 		pos = (min([exon[2] for exon in exons]),
 			max([exon[3] for exon in exons]))
