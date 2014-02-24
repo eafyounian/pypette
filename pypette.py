@@ -37,8 +37,8 @@ def mkdir(path):
 		pass
 	
 def zopen(path, mode='r'):
-	#gzip_executable = 'gzip'
-	gzip_executable = 'pigz'
+	gzip_executable = 'gzip'
+	#gzip_executable = 'pigz'
 	
 	if path[0] == '~':
 		path = os.path.expanduser(path)
