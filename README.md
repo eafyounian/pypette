@@ -51,4 +51,6 @@ Only keep structural variants with at least one read pair and three split reads 
 
 Annotate structural variants with information about nearby genes:
 
-    breakfast annotate -b ensembl.bed filtered.sv > annotated.sv
+    wget ftp://ftp.ensembl.org/pub/release-74/gtf/homo_sapiens/Homo_sapiens.GRCh37.74.gtf.gz
+    gtf to gene bed Homo_sapiens.GRCh37.74.gtf.gz > ensembl_genes.bed
+    breakfast annotate -b ensembl_genes.bed filtered.sv > annotated.sv
