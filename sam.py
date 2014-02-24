@@ -27,7 +27,6 @@ Options:
 
 from __future__ import print_function
 import sys, subprocess, docopt, re, os
-import numpypy as np
 from pypette import zopen, shell, info, error, temp_dir, shell_stdout
 
 
@@ -325,6 +324,8 @@ def sam_pileup_each(vcf_path, bam_paths, min_al_quality=0):
 #############
 
 def sam_count(bam_paths, bed_path):
+	import numpypy as np
+
 	# bedtools gives cryptic error messages, so we try to help.
 	for bam_path in bam_paths:
 		if not os.path.exists(bam_path):
