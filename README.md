@@ -32,10 +32,11 @@ Examples
 
 #### Chromosomal rearrangements
 
-Create a flattened genome FASTA file for use in split read analysis:
+Download and prepare a reference genome for use in split read analysis:
 
-    wget ftp://ftp-trace.ncbi.nih.gov/1000genomes/ftp/technical/reference/human_g1k_v37.fasta.gz
-    fasta flatten human_g1k_v37.fasta.gz hg19_flat
+    wget ftp://ftp.ccb.jhu.edu/pub/data/bowtie_indexes/hg19.ebwt.zip
+    unzip hg19.ebwt.zip
+    fasta flatten <(bowtie-inspect hg19) hg19
 
 Identify structural variants based on read pairs and split reads. Split reads must overlap at least 25bp on both sides of the breakpoint:
 
