@@ -40,8 +40,8 @@ Download and prepare a reference genome for use in split read analysis:
 
 Identify structural variants based on read pairs and split reads. Split reads must overlap at least 25bp on both sides of the breakpoint:
 
-    breakfast detect -a25 test.bam hg19_flat test
-    breakfast detect -a25 control.bam hg19_flat control
+    breakfast detect -a25 test.bam hg19 test
+    breakfast detect -a25 control.bam hg19 control
 
 Construct a blacklist of false positive regions based on the control sample:
 
