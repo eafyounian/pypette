@@ -34,7 +34,8 @@ Examples
 
 Create a flattened genome FASTA file for use in split read analysis:
 
-    fasta flatten hg19.fa hg19_flat
+    wget ftp://ftp-trace.ncbi.nih.gov/1000genomes/ftp/technical/reference/human_g1k_v37.fasta.gz
+    fasta flatten human_g1k_v37.fasta.gz hg19_flat
 
 Identify structural variants based on read pairs and split reads. Split reads must overlap at least 25bp on both sides of the breakpoint:
 
