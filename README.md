@@ -9,7 +9,7 @@ Pypette is a collection of command line utilities and libraries for analyzing bi
   * FASTA, VCF and SAM file manipulation
   * Other miscellaneous functionality
 
-Pypette has no dependencies beyond Python and [samtools](https://github.com/samtools/samtools). For performance reasons, it is recommended that the software is run using [PyPy](http://pypy.org/), a high performance implementation of the Python language. You can build PyPy from [source](http://pypy.org/download.html#building-from-source), or download [portable binaries](https://github.com/squeaky-pl/portable-pypy).  
+For performance reasons, it is recommended that the software is run using [PyPy](http://pypy.org/), a high performance implementation of the Python language. You can build PyPy from [source](http://pypy.org/download.html#building-from-source), or download [portable binaries](https://github.com/squeaky-pl/portable-pypy).  
 
 Installation
 ------------
@@ -21,6 +21,11 @@ To install Pypette, download the latest release and extract it to a folder. Then
     cd pypette-0.7
     make
     export PATH=/some/folder/pypette-0.7/bin:$PATH
+
+Some Pypette functionality requires external software to be installed:
+- [samtools](https://github.com/samtools/samtools): mutation and structural variant calling
+- [Bowtie](http://bowtie-bio.sourceforge.net/index.shtml): structural variant calling
+- [ANNOVAR](http://www.openbioinformatics.org/annovar/): mutation annotation
 
 Examples
 --------
