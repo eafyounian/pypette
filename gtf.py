@@ -18,7 +18,6 @@ from __future__ import print_function
 import sys, docopt, re, os
 from pypette import zopen, shell, revcomplement, info, error, shell_stdout
 from sam import read_sam
-import numpypy as np
 
 
 
