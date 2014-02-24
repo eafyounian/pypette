@@ -23,9 +23,9 @@ To install Pypette, download the latest release and extract it to a folder. Then
     export PATH=/some/folder/pypette-0.7/bin:$PATH
 
 Some Pypette functionality requires external software to be installed:
-- [samtools](https://github.com/samtools/samtools): mutation and structural variant calling
-- [Bowtie](http://bowtie-bio.sourceforge.net/index.shtml): structural variant calling
-- [ANNOVAR](http://www.openbioinformatics.org/annovar/): mutation annotation
+- [samtools](https://github.com/samtools/samtools): required for mutation and structural variant calling
+- [Bowtie](http://bowtie-bio.sourceforge.net/index.shtml): required for structural variant calling
+- [ANNOVAR](http://www.openbioinformatics.org/annovar/): required for mutation annotation
 
 Examples
 --------
