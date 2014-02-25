@@ -5,7 +5,7 @@ BreakFast is a toolkit for detecting chromosomal rearrangements
 based on whole genome sequencing data.
 
 Usage:
-breakfast detect <bam_file> <genome_path> <out_prefix> [-a N] [-q N]
+breakfast detect <bam_file> <genome> <out_prefix> [-a N] [-q N]
 	[-d N] [-O orientation]
 breakfast detect specific [-A] <bam_file> <donors> <acceptors> <genome>
 	<out_prefix>
@@ -189,9 +189,8 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 	# guaranteed and the loop below will fail.
 	anchor_alignments = shell_stdout(
 		'sam unaligned reads %s | fasta split interleaved - %d | '
-		'bowtie -f -p1 -v0 -m1 -B1 --suppress 5,6,7,8 '
-		'~/tools/bowtie-indexes/homo_sapiens/hg19 -'
-		% (sam_path, anchor_len))
+		'bowtie -f -p1 -v0 -m1 -B1 --suppress 5,6,7,8 %s -'
+		% (sam_path, anchor_len, genome_path))
 	
 	# FIXME: Would be nice to do this one chromosome at a time, so we wouldn't
 	# need to use 3 gigabytes of memory.
@@ -270,7 +269,7 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 		if left_match >= max_homology or right_match >= max_homology: continue
 		
 		# Identify the breakpoint location that minimizes the number of
-		# nucleotide mismatches between the read and breakpoint flanks.
+		# nucleotide mismatches between the read and the breakpoint flanks.
 		potential_breakpoints = range(anchor_len, full_len - anchor_len + 1)
 		mismatches = [0] * len(potential_breakpoints)
 		for k, br in enumerate(potential_breakpoints):
@@ -329,10 +328,15 @@ def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 			min_rearrangement_size=min_rearrangement_size)
 	
 	info('Sorting discordant pairs by chromosomal position...')
-	shell('sort -k1,1 -k3,3n -T %s <(gunzip -c %s.discordant_pairs.tsv.gz) '
-		'<(gunzip -c %s.discordant_singles.tsv.gz) | '
-		'gzip -c > %s.sorted_pairs.tsv.gz' %
-		(os.path.dirname(out_prefix), out_prefix, out_prefix, out_prefix))
+	sort_inputs = '<(gunzip -c %s.discordant_pairs.tsv.gz)' % out_prefix
+	if anchor_len > 0:
+		sort_inputs +=' <(gunzip -c %s.discordant_singles.tsv.gz)' % out_prefix
+
+	sort_tmp_dir = os.path.dirname(out_prefix)
+	if not sort_tmp_dir: sort_tmp_dir = './'
+
+	shell('sort -k1,1 -k3,3n -T %s %s | gzip -c > %s.sorted_pairs.tsv.gz' %
+		(sort_tmp_dir, sort_inputs, out_prefix))
 	
 	def print_rearrangement(out, r, discard_pcr_duplicates):
 		if discard_pcr_duplicates:
@@ -919,7 +923,7 @@ if __name__ == '__main__':
 		detect_specific(args['<bam_file>'], args['<donors>'],
 			args['<acceptors>'], args['<genome>'], args['<out_prefix>'], all_reads=args['--all-reads'])
 	elif args['detect']:
-		detect_rearrangements(args['<bam_file>'], args['<genome_path>'],
+		detect_rearrangements(args['<bam_file>'], args['<genome>'],
 			args['<out_prefix>'],
 			anchor_len=int(args['--anchor-len']),
 			min_mapq=int(args['--min-mapq']),
