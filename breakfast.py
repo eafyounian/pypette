@@ -15,7 +15,6 @@ breakfast blacklist [--freq-above=FREQ] <sv_files>...
 breakfast visualize <sv_file>
 breakfast tabulate rearranged genes <sv_files>...
 breakfast tabulate fusions <sv_files>...
-breakfast tabulate fusion variants <sv_files>...
 breakfast statistics <sv_files>...
 breakfast align junction <reads>
 breakfast filter distance <min_distance> <sv_file>
@@ -714,26 +713,23 @@ def tabulate_rearranged_genes(sv_paths):
 			nearby_2 = [m.group(1) for m in nearby_2
 				if abs(int(m.group(2))) < 20000]
 			
-			# Discard intragenic rearrangements and alternative splicing.
-			if set(nearby_1).intersection(nearby_2): continue
-			if not nearby_1 or not nearby_2: continue
-			
-			pair = (nearby_1[0], nearby_2[0])
-			evidence = pair_evidence[pair][sample_names.index(sample_name)]
-			evidence[0] += int(tokens[10])
-			evidence[1] += int(tokens[11])
-			pair_nearby_genes[pair] += nearby_1[1:] + nearby_2[1:]
+			S = sample_names.index(sample_name)
+			if nearby_1:
+				evidence[nearby_1[0]][S][0] += int(tokens[10])
+				nearby_genes[nearby_1[0]] += nearby_1[1:]
+			if nearby_2:
+				evidence[nearby_2[0]][S][0] += int(tokens[11])
+				nearby_genes[nearby_2[0]] += nearby_2[1:]
 					
 		sv_file.close()
 
-	print('Gene pair\tNearby genes\tTotal positive\t%s' %
-		'\t'.join(sample_names))
-	for pair, evidence in sorted(pair_evidence.iteritems(),
-		key=lambda x: sum([r[0] + r[1] > 0 for r in x[1]]), reverse=True):
-		sys.stdout.write('%s-%s\t%s\t%d' % (pair[0], pair[1],
-			', '.join(set(pair_nearby_genes[pair])),
-			sum([r[0] + r[1] > 0 for r in evidence])))
-		for r in evidence:
+	print('Gene\tNearby genes\tTotal positive\t%s' % '\t'.join(sample_names))
+	for gene, reads in sorted(evidence.iteritems(),
+		key=lambda x: sum([r[0]+r[1] > 0 for r in x[1]]), reverse=True):
+		sys.stdout.write('%s\t%s\t%d' % (gene,
+			', '.join(set(nearby_genes[gene])),
+			sum([r[0]+r[1] > 0 for r in reads])))
+		for r in reads:
 			if not r[0] + r[1] > 0:
 				sys.stdout.write('\t')
 			else:
