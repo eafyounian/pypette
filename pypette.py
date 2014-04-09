@@ -1,5 +1,5 @@
 from __future__ import print_function
-import sys, re, datetime, pwd, os, subprocess, string, tempfile, random
+import sys, re, datetime, pwd, os, subprocess, string, tempfile, random, gc
 from collections import defaultdict
 
 
@@ -122,6 +122,11 @@ class prioritydict(dict):
 def argsort(seq):
 	return sorted(range(len(seq)), key = seq.__getitem__)
 
+def natural_sorted(seq):
+    alphanum_key = lambda key: [ int(c) if c.isdigit() else c.lower()
+    	for c in re.split('([0-9]+)', key) ] 
+    return sorted(seq, key = alphanum_key)
+
 
 
 ####################
@@ -129,19 +134,24 @@ def argsort(seq):
 ####################
 
 def read_fasta(fasta_path):
-	entries = defaultdict(list)
+	entries = {}
 	fasta = open(fasta_path)
+	chr = None
 	for line in fasta:
 		if line[0] == '#': continue
 		if line[0] == '>':
-			sequence = entries[line[1:].rstrip()]
-			if sequence:
-				error('Entry %s found twice in FASTA.' % line[1:].rstrip())
+			if chr:
+				entries[chr] = ''.join(sequence)
+				gc.collect()
+			chr = line[1:].rstrip()
+			if chr in entries: error('Entry %s found twice in FASTA.' % chr)
+			sequence = []
 		else:
 			sequence.append(line.strip())
-	
-	for key in entries:
-		entries[key] = ''.join(entries[key])
+
+	if chr:
+		entries[chr] = ''.join(sequence)
+
 	return entries
 
 def read_flat_seq(flat_seq_dir):
