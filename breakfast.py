@@ -5,27 +5,30 @@ BreakFast is a toolkit for detecting chromosomal rearrangements
 based on whole genome sequencing data.
 
 Usage:
-breakfast detect <bam_file> <genome> <out_prefix> [-a N] [-q N]
+breakfast detect <bam_file> <genome> <out_prefix> [-a N] [-f N] [-q N]
 	[-d N] [-O orientation]
 breakfast detect specific [-A] <bam_file> <donors> <acceptors> <genome>
 	<out_prefix>
 breakfast filter <sv_file> [-r P-S-A]... [--blacklist=PATH]
-breakfast annotate <sv_file> --bed=PATH
+breakfast annotate <sv_file> <bed_file>
 breakfast blacklist [--freq-above=FREQ] <sv_files>...
 breakfast visualize <sv_file>
 breakfast tabulate rearranged genes <sv_files>...
 breakfast tabulate fusions <sv_files>...
 breakfast statistics <sv_files>...
+breakfast filter by region <sv_file> <region>
+breakfast filter by distance <min_distance> <sv_file>
 breakfast align junction <reads>
-breakfast filter distance <min_distance> <sv_file>
 
 Options:
   -a, --anchor-len=N      Anchor length for split read analysis. When zero,
                           split reads are not used [default: 0].
+  -f, --max-frag-len=N    Maximum fragment length [default: 5000].
   -q, --min-mapq=N        Minimum mapping quality to consider [default: 15].
   -d, --min-distance=N    Min kb distance between breakpoints [default: 10].
   -O, --orientation=OR    Read pair orientation produced by sequencer. Either
-                          'converging' or 'diverging' [default: converging].
+                          'fr' (converging), 'rf' (diverging) or 'ff'
+                          [default: fr].
   -A, --all-reads         Use all reads for rearrangement detection, not just
                           unaligned reads.
 
@@ -36,23 +39,17 @@ Options:
                           would require at least one mate pair and two split
                           reads of evidence [default: 0-0-0].
 							
-  -b, --bed=PATH          BED file containing genomic features.
-
   --freq-above=FREQ       Minimum frequency at which a variant must be
                           present among the control samples to be
                           considered a false positive [default: 0].
 '''
 
 from __future__ import print_function
-import sys, re, docopt, itertools, os, sam
+import sys, re, docopt, itertools, os, sam, gc
 from collections import defaultdict
 from pypette import info, error, shell_stdout, shell, zopen, Object
 from pypette import read_flat_seq, revcomplement, point_region_distance
-from pypette import regions_from_bed
-
-max_fragment_len = 5000
-discard_pcr_duplicates = True
-orientation = 'converging'
+from pypette import regions_from_bed, read_fasta
 
 class Rearrangement(object):
 	__slots__ = ('chr', 'strand', 'pos', 'mchr', 'mstrand', 'mpos', 'reads')
@@ -94,7 +91,7 @@ sv_file_header = (
 ####################
 
 def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
-	min_mapq):
+	min_mapq, orientation):
 	
 	out = zopen(out_prefix + '.discordant_pairs.tsv.gz', 'w')
 	N = 0
@@ -114,8 +111,7 @@ def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
 		
 		# Discard spliced and clipped reads.
 		# FIXME: Add support for spliced RNA-seq reads.
-		if 'N' in al[5]: continue
-		if 'S' in al[5]: continue
+		if 'N' in al[5] or 'S' in al[5]: continue
 		
 		if al[0][-2] == '/': al[0] = al[0][:-2]   # Remove /1 or /2 suffix
 		
@@ -136,29 +132,45 @@ def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
 		if not chr.startswith('chr'): chr = 'chr' + chr
 		if not mchr.startswith('chr'): mchr = 'chr' + mchr
 
-		# Reorient pairs so that the mate with the lower coordinate always
-		# comes first.
-		if chr > mchr or (chr == mchr and pos > mpos):
-			chr, mchr = mchr, chr
-			pos, mpos = mpos, pos
-			rlen, mrlen = mrlen, rlen
-			strand, mstrand = ('-' if mstrand == '+' else '+',
-				'-' if strand == '+' else '+')
-		
-		# If the orientation is converging, flip the second mate
-		# around to make the mates point in the same direction.
-		if re.search('paral', orientation, re.I):
-			pass
-		elif re.search('converg', orientation, re.I):
-			mpos += mrlen - 1
+		if orientation == 'fr':
+			# Reorient pairs so that the first mate is always upstream.
+			if chr > mchr or (chr == mchr and pos > mpos):
+				chr, mchr = mchr, chr
+				pos, mpos = mpos, pos
+				rlen, mrlen = mrlen, rlen
+				strand, mstrand = mstrand, strand
+
+			# Convert to forward-forward orientation (flip second mate).
 			mstrand = '-' if mstrand == '+' else '+'
+
+		elif orientation == 'rf':
+			# Reorient pairs so that the first mate is always upstream.
+			if chr > mchr or (chr == mchr and pos > mpos):
+				chr, mchr = mchr, chr
+				pos, mpos = mpos, pos
+				rlen, mrlen = mrlen, rlen
+				strand, mstrand = mstrand, strand
+
+			# Convert to forward-forward orientation (flip first mate).
+			strand = '-' if strand == '+' else '+'
+
+		elif orientation == 'ff':
+			# Reorient pairs so that the first mate is always upstream.
+			# If mates are swapped, both mates must be reversed.
+			if chr > mchr or (chr == mchr and pos > mpos):
+				chr, mchr = mchr, chr
+				pos, mpos = mpos, pos
+				rlen, mrlen = mrlen, rlen
+				strand, mstrand = '+' if mstrand == '-' else '-', \
+					'+' if strand == '-' else '-'
+
 		else:
 			error('Unsupported read orientation detected.')
 		
 		# Make positions represent read starts.
 		if strand == '-': pos += rlen - 1
 		if mstrand == '-': mpos += mrlen - 1
-		
+
 		# Each discordant mate pair is represented as a 7-tuple
 		# (chr_1, strand_1, pos_1, chr_2, strand_2, pos_2, None).
 		# The None at the end signifies that this is a mate pair.
@@ -221,13 +233,13 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 		# Ignore rearrangements involving mitochondrial DNA.
 		if 'M' in chr or 'M' in mchr: continue
 			
-		# Reorient the pairs so the anchor with the lower coordinate always
-		# comes first.
+		# Reorient the pairs so the first anchor is always upstream.
+		# If mates are swapped, both mates must be reverse-complemented.
 		if chr > mchr or (chr == mchr and pos > mpos):
 			chr, mchr = mchr, chr
 			pos, mpos = mpos, pos
-			strand, mstrand = ('-' if mstrand == '+' else '+',
-				'-' if strand == '+' else '+')
+			strand, mstrand = '+' if mstrand == '-' else '-', \
+				'+' if strand == '-' else '-'
 			seq = revcomplement(seq)
 		
 		# Extract the flanking sequences from the chromosome sequences.
@@ -312,14 +324,15 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 
 
 def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
-	min_rearrangement_size, min_mapq, discard_pcr_duplicates=True):
+	min_rearrangement_size, min_mapq, orientation, max_frag_len, 
+	discard_pcr_duplicates=True):
 	
 	if not os.path.exists(sam_path):
 		error('File %s does not exist.' % sam_path)
 	
 	detect_discordant_pairs(sam_path, out_prefix,
-		min_rearrangement_size=min_rearrangement_size,
-		min_mapq=min_mapq)
+		min_rearrangement_size=min_rearrangement_size, min_mapq=min_mapq,
+		orientation=orientation)
 	
 	# Execute split read analysis if the user has specified an anchor length.
 	if anchor_len > 0:
@@ -371,21 +384,21 @@ def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 		seq = None if al[6] == '-' else al[6]
 		
 		# Rearrangements that are too far need not be considered in the future
-		far = (r for r in rearrangements if pos - r.pos[1] > max_fragment_len)
+		far = (r for r in rearrangements if pos - r.pos[1] > max_frag_len)
 		for r in far:
 			N += print_rearrangement(out, r, discard_pcr_duplicates)
 			
 		rearrangements = [r for r in rearrangements if
-			pos - r.pos[1] <= max_fragment_len]
+			pos - r.pos[1] <= max_frag_len]
 		
 		# Check if we already have a rearrangement that matches the new pair.
 		# We don't check the distance for the first mate because we already
 		# know from above the rearrangements near it. In comparing the strands,
 		# we assume that fragments are not oriented.
 		matches = [r for r in rearrangements if 
-			point_region_distance(mpos, r.mpos) <= max_fragment_len and
+			point_region_distance(mpos, r.mpos) <= max_frag_len and
 			chr == r.chr and mchr == r.mchr and
-			((strand == r.strand) == (mstrand == r.mstrand))]
+			strand == r.strand and mstrand == r.mstrand]
 		
 		read = (pos, mpos, seq)
 		if matches:
@@ -423,7 +436,7 @@ def detect_specific(bam_path, donors_path, acceptors_path, genome_path,
 	info('Using read length %d bp...' % read_len)
 
 	flank_len = read_len - 10
-	chromosomes = read_flat_seq(genome_path)
+	chromosomes = read_fasta(genome_path)
 
 	donor_exons = regions_from_bed(donors_path)
 	donors = []
@@ -448,6 +461,9 @@ def detect_specific(bam_path, donors_path, acceptors_path, genome_path,
 			acceptors.append((chr, '-', ex[3],
 				revcomplement(chr_seq[ex[3]-flank_len:ex[3]])))
 				
+	del chromosomes    # Release 3 GB of memory
+	gc.collect()
+
 	# Remove duplicate acceptors and donors.
 	acceptors = list(set(acceptors))
 	donors = list(set(donors))
@@ -506,7 +522,7 @@ def detect_specific(bam_path, donors_path, acceptors_path, genome_path,
 # BREAKFAST FILTER #
 ####################
 
-def sv_locus_identifiers(line, resolution=1000):
+def sv_locus_identifiers(line, resolution=5000):
 	tokens = line.split('\t')
 	chrom_1 = tokens[0]
 	chrom_2 = tokens[5]
@@ -572,12 +588,10 @@ def distance_to_gene(sv_pos, gene_pos):
 
 def annotate_variants(sv_path, bed_path):
 	features = []
-	
 	bed_file = open(bed_path)
 	for line in bed_file:
-		tokens = line[:-1].split('\t')
-		features.append((tokens[0], tokens[5], (int(tokens[1]), int(tokens[2])),
-			tokens[3]))
+		c = line.rstrip().split('\t')
+		features.append((c[0], c[5], (int(c[1]), int(c[2])), c[3]))
 	
 	print(sv_file_header)
 	sv_file = open(sv_path)
@@ -715,10 +729,12 @@ def tabulate_rearranged_genes(sv_paths):
 			
 			S = sample_names.index(sample_name)
 			if nearby_1:
-				evidence[nearby_1[0]][S][0] += int(tokens[10])
+				reads = evidence[nearby_1[0]][S]
+				reads[0] += int(tokens[10]); reads[1] += int(tokens[11])
 				nearby_genes[nearby_1[0]] += nearby_1[1:]
 			if nearby_2:
-				evidence[nearby_2[0]][S][0] += int(tokens[11])
+				reads = evidence[nearby_2[0]][S]
+				reads[0] += int(tokens[10]); reads[1] += int(tokens[11])
 				nearby_genes[nearby_2[0]] += nearby_2[1:]
 					
 		sv_file.close()
@@ -888,9 +904,9 @@ def align_junction(reads):
 			
 			
 
-#############################
-# BREAKFAST FILTER DISTANCE #
-#############################
+################################
+# BREAKFAST FILTER BY DISTANCE #
+################################
 
 def filter_distance(sv_path, min_distance):
 	for line in zopen(sv_path):
@@ -903,6 +919,34 @@ def filter_distance(sv_path, min_distance):
 		if tokens[0] != tokens[5] or abs(
 			int(tokens[2]) - int(tokens[7])) >= min_distance:
 			sys.stdout.write(line)
+
+
+
+
+
+
+##############################
+# BREAKFAST FILTER BY REGION #
+##############################
+
+def filter_by_region(sv_path, region):
+	m = re.match(r'(chr.+): *(\d+) *- *(\d+)', region.strip())
+	if not m: error('Invalid region specified.')
+
+	chr = m.group(1)
+	start = int(m.group(2))
+	end = int(m.group(3))
+
+	for line in zopen(sv_path):
+		if not line.startswith('chr'):
+			sys.stdout.write(line)
+			continue
+		c = line.rstrip().split('\t')
+
+		if not chr in (c[0], c[5]): continue
+		if (start <= int(c[2]) <= end) or (start <= int(c[7]) <= end):
+			sys.stdout.write(line)
+
 
 
 
@@ -923,15 +967,19 @@ if __name__ == '__main__':
 			args['<out_prefix>'],
 			anchor_len=int(args['--anchor-len']),
 			min_mapq=int(args['--min-mapq']),
-			min_rearrangement_size=int(args['--min-distance'])*1000)
+			min_rearrangement_size=int(args['--min-distance'])*1000,
+			orientation=args['--orientation'],
+			max_frag_len=int(args['--max-frag-len']))
 	elif args['filter'] and args['distance']:
 		filter_distance(args['<sv_file>'], int(args['<min_distance>'])*1000)
+	elif args['filter'] and args['region']:
+		filter_by_region(args['<sv_file>'], args['<region>'])
 	elif args['filter']:
 		filter_variants(args['<sv_file>'],
 			min_reads=args['--min-reads'],
 			blacklist_path=args['--blacklist'])
 	elif args['annotate']:
-		annotate_variants(args['<sv_file>'], args['--bed'])
+		annotate_variants(args['<sv_file>'], args['<bed_file>'])
 	elif args['blacklist']:
 		generate_blacklist(args['<sv_files>'],
 			min_frequency=float(args['--freq-above']))
