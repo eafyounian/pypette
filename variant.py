@@ -15,11 +15,14 @@ Usage:
   variant filter contingent <vcf_file>
   variant annotate <vcf_file>
   variant rank <vcf_file>
-  variant keep samples <vcf_file> <samples>...
-  variant discard samples <vcf_file> <samples>...
+  variant keep samples <vcf_file> <regex>
+  variant discard samples <vcf_file> <regex>
   variant conservation <vcf_file>
   variant plot evidence <vcf_file>
   variant statistics <vcf_file>
+  variant signature <vcf_file> <genome_fasta>
+  variant top mutated sites <vcf_file>
+  variant top mutated regions <vcf_file> <region_size>
   variant heterozygous bases <vcf_file> <pos_file>
   variant allele fractions <vcf_file> <pos_file>
 
@@ -40,10 +43,10 @@ Options:
 
 from __future__ import print_function
 import sys, subprocess, docopt, re, os, string
-import numpypy as np
+import numpy as np
 from collections import defaultdict
 from pypette import zopen, shell, shell_stdin, shell_stdout, argsort, temp_dir
-from pypette import info, error
+from pypette import info, error, natural_sorted, revcomplement, read_fasta
 
 
 gt_symbols = ['', '0/0', '0/1', '1/1']
@@ -82,10 +85,8 @@ def simple_pileup(bam_paths, genome_path, min_mapq=10, min_alt_alleles=3,
 	helper_dir = os.path.dirname(os.path.realpath(__file__)) + '/compiled'
 	
 	options = []
-	if re.match(r'.+\.bed', region, re.I):
-		options.append('-l %s' % region)
-	else:
-		options.append('-r %s' % region)
+	if region:
+		options.append('%s %s' % ('-l' if region.endswith('.bed') else '-r', region))
 		
 	return shell_stdout(
 		'samtools mpileup -sB %s -q0 -f %s %s 2> /dev/null | %s/spileup %d %d'
@@ -133,6 +134,7 @@ def variant_call(bam_paths, genome_path, options):
 		region=options.region):
 
 		tokens = line[:-1].split('\t')
+		if tokens[2] == 'N': continue
 		pileups = [p.split(' ') for p in tokens[3:]]
 
 		total_reads = np.zeros(len(samples))
@@ -147,15 +149,24 @@ def variant_call(bam_paths, genome_path, options):
 				if pileup[a] != '.': allele_reads[pileup[a]][s] = count		
 
 		# Call genotypes for each allele.
-		for allele, reads in allele_reads.iteritems():
+		for alt, reads in allele_reads.iteritems():
 			genotypes = call_genotypes(reads, total_reads, options)
 			if not options.keep_all and all(genotypes < 2): continue
 			
 			gtypes = ('%s:%d:%d' % (gt_symbols[g], reads[s], total_reads[s])
 				for s, g in enumerate(genotypes))
 
-			print('%s\t%s\t%s\t%s\t%s' % (tokens[0], tokens[1], tokens[2],
-				allele.upper(), '\t'.join(gtypes)))
+			# Reformat indels in VCF4 format
+			ref = tokens[2]
+			if len(alt) >= 2:
+				if alt[1] == '+':    # Insertion
+					alt = (ref if alt[0] == '.' else alt[0]) + alt[2:]
+				elif alt[1] == '-':  # Deletion
+					ref += alt[2:]
+					alt = (ref[0] if alt[0] == '.' else alt[0])
+
+			print('%s\t%s\t%s\t%s\t%s' % (tokens[0], tokens[1], ref,
+				alt.upper(), '\t'.join(gtypes)))
 
 
 			
@@ -270,23 +281,28 @@ def format_annovar(vcf_path, out_path):
 			out.write('\t'.join(headers) + '\n')
 			continue
 			
-		tokens = line[:-1].split('\t')
-		tokens.insert(2, tokens[1])
-		
-		if tokens[4][0] == '+':
-			# Insertion in samtools mpileup format
-			tokens[3] = '-'
-			tokens[4] = tokens[4][1:]
-			tokens[1] = str(int(tokens[1]) + 1)
-			tokens[2] = str(int(tokens[2]) + 1)
-		elif tokens[4][0] == '-':
-			# Deletion in samtools mpileup format
-			tokens[3] = tokens[4][1:]
-			tokens[4] = '-'
-			tokens[1] = str(int(tokens[1]) + 1)
-			tokens[2] = str(int(tokens[2]) + len(tokens[3]))
-			
-		out.write('\t'.join(tokens))
+		cols = line[:-1].split('\t')
+		cols.insert(2, cols[1])    # Add end coordinate
+		ref = cols[3]; alt = cols[4]
+
+		if len(ref) == 1 and len(alt) > 1 and ref[0] == alt[0]:
+			# Simple insertion
+			ref = '-'
+			alt = alt[1:]
+			cols[1] = str(int(cols[1])+1)
+			cols[2] = cols[1]
+		elif len(ref) > 1 and len(alt) == 1 and ref[0] == alt[0]:
+			# Simple deletion
+			ref = ref[1:]
+			alt = '-'
+			cols[1] = str(int(cols[1])+1)
+			cols[2] = str(int(cols[1]) + len(ref) - 1)
+		elif len(ref) > 1 or len(alt) > 1:
+			# Block substitution
+			cols[2] = str(int(cols[1]) + len(ref) - 1)
+
+		cols[3] = ref; cols[4] = alt
+		out.write('\t'.join(cols))
 		out.write('\n')
 		
 	out.close()
@@ -326,8 +342,10 @@ def variant_filter(vcf_path, nonsynonymous, no_1000g, min_refs):
 				continue
 
 		if nonsynonymous:
-			if not cols[col_exonic_func].startswith('nonsy'): continue
-			
+			if not cols[col_exonic_func].startswith(
+				('nonsynonymous', 'frameshift', 'stopgain', 'stoploss')):
+				continue
+
 		if no_1000g:
 			if cols[col_1000g]: continue
 				
@@ -596,23 +614,222 @@ def variant_statistics(vcf_path):
 
 	headers = line[:-1].split('\t')
 	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
+	samples = headers[sample_col:]
 	
-	col_gene = headers.index('NEARBY_GENES')
-		
-	gene_mutations = defaultdict(int)
+	nearby_gene_col = headers.index('NEARBY_GENES') \
+		if 'NEARBY_GENES' in headers else None
+	
+	mutations_per_sample = np.zeros(len(samples))
+	mutations_per_chr = defaultdict(lambda: np.zeros(len(samples)))
+	mutations_per_gene = defaultdict(lambda: np.zeros(len(samples)))
 	
 	for line in vcf_file:
 		cols = line[:-1].split('\t')
 		gtypes = [gt.split(':')[0] for gt in cols[sample_col:]]
-		
-		gene_mutations[cols[col_gene]] += sum(
-			gt_symbols.index(gt) > 1 for gt in gtypes)
+		gtypes = np.array([gt_symbols.index(gt) for gt in gtypes])
+		mutations_per_sample += (gtypes > 1)
+		mutations_per_chr[cols[0]] += (gtypes > 1)
+
+		if nearby_gene_col:
+			for nearby in cols[nearby_gene_col].split(','):
+				mutations_per_gene[nearby] += (gtypes > 1)
 	
-	top_genes = sorted(gene_mutations.iteritems(), key=lambda x: x[1],
-		reverse=True)
-	for top in top_genes:
-		print('%s\t%d' % (top[0], top[1]))
+	print('Sample mutation counts:')
+	for s, sample_name in enumerate(samples):
+		print('%s: %d' % (sample_name, mutations_per_sample[s]))
+
+	print('Mutations per chromosome:')
+	chrs = natural_sorted(mutations_per_chr.keys())
+	print('SAMPLE\t%s' % '\t'.join(chrs))
+	for s, sample_name in enumerate(samples):
+		total = sum(mutations_per_chr[chr][s] for chr in chrs)
+		if total == 0: continue
+		sys.stdout.write(sample_name)
+		for chr in chrs:
+			sys.stdout.write('\t%d (%.1f)' % (mutations_per_chr[chr][s],
+				float(mutations_per_chr[chr][s]) / total * 100))
+		sys.stdout.write('\n')
+
+	print('Top mutated genes:')
+	top_genes = sorted(mutations_per_gene.iteritems(),
+		key=lambda x: sum(x[1] > 0), reverse=True)
+	for top in top_genes[0:100]:
+		mut_samples = sum(top[1] > 0)
+		if mut_samples < 2: continue
+		print('%s\t%d samples' % (top[0], mut_samples))
 	
+
+
+
+
+
+#####################
+# VARIANT SIGNATURE #
+#####################
+
+def variant_signature(vcf_path, genome_path):
+	vcf_file = zopen(vcf_path)
+	for line in vcf_file:
+		if not line.startswith('#'): break
+
+	chromosomes = read_fasta(genome_path)
+
+	headers = line.rstrip().split('\t')
+	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
+	samples = headers[sample_col:]
+
+	substitutions = []
+	for ref in 'CT':
+		for alt in ('AGT' if ref == 'C' else 'ACG'):
+			for pre in 'ACGT':
+				for post in 'ACGT':
+					substitutions.append(pre+ref+post+'>'+pre+alt+post)
+	sub_count = np.zeros((len(substitutions), len(samples)))
+
+	for line in vcf_file:
+		cols = line[:-1].split('\t')
+		if not cols[2] in 'ACGT' or not cols[3] in 'ACGT': continue
+		chr = chromosomes[cols[0]]; pos = int(cols[1])
+		if chr[pos-1] != cols[2]: error('Reference mismatch!')
+		ref = chr[pos-2:pos+1]
+		alt = ref[0] + cols[3] + ref[2]
+		if ref[1] in 'AG':
+			ref = revcomplement(ref)
+			alt = revcomplement(alt)
+
+		for s, gt in enumerate(cols[sample_col:]):
+			if gt_symbols.index(gt.split(':')[0]) > 1:
+				sub_count[substitutions.index(ref + '>' + alt), s] += 1
+
+	print('SUBSTITUTION\t%s' % '\t'.join(samples))
+	for sub in substitutions:
+		sys.stdout.write(sub)
+		for count in sub_count[substitutions.index(sub), :]:
+			sys.stdout.write('\t%d' % count)
+		sys.stdout.write('\n')
+
+
+
+
+
+#############################
+# VARIANT TOP MUTATED SITES #
+#############################
+
+def variant_top_mutated_sites(vcf_path):
+	vcf_file = zopen(vcf_path)
+	for line in vcf_file:
+		if not line.startswith('#'): break
+
+	headers = line.rstrip().split('\t')
+	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
+	samples = headers[sample_col:]
+	
+	mutations_per_site = defaultdict(int)
+	
+	for line in vcf_file:
+		cols = line[:-1].split('\t')
+		gtypes = [gt.split(':')[0] for gt in cols[sample_col:]]
+		mutations_per_site[cols[0] + ':' + cols[1]] += \
+			sum(gt_symbols.index(gt) > 1 for gt in gtypes)
+
+	print('Top mutated sites:')
+	top_sites = sorted(mutations_per_site.iteritems(),
+		key=lambda x: x[1], reverse=True)
+	for top in top_sites:
+		if top[1] < 2: continue
+		print('%s\t%d samples' % (top[0], top[1]))
+
+
+
+
+
+
+
+
+
+
+###############################
+# VARIANT TOP MUTATED REGIONS #
+###############################
+
+def variant_top_mutated_regions(vcf_path, region_size):
+	if region_size % 2: error('Region size must be divisible by two.')
+	step = region_size / 2
+
+	vcf_file = zopen(vcf_path)
+	for line in vcf_file:
+		if not line.startswith('#'): break
+
+	headers = line.rstrip().split('\t')
+	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
+	samples = headers[sample_col:]
+
+	# Construct chromosome map
+	chr_sizes = defaultdict(int)
+	for line in vcf_file:
+		cols = line[:-1].split('\t')
+		chr_sizes[cols[0]] = max(chr_sizes[cols[0]], int(cols[1]))
+	vcf_file.close()
+
+	mutated = {}		# Which samples are mutated in each bin
+	variant_pos = {}	# Position of variant in bin, -1 if various
+	for chr in chr_sizes:
+		mutated[chr] = np.zeros((chr_sizes[chr] / step + 1, len(samples)),
+			dtype=np.bool)
+		variant_pos[chr] = np.zeros(chr_sizes[chr] / step + 1, dtype=np.int32)
+
+	# Reopen VCF file (might be compressed), identify columns
+	vcf_file = zopen(vcf_path)
+	for line in vcf_file:
+		if not line.startswith('#'): break
+
+	# Tally mutated samples in each region
+	print('Tallying mutated samples...')
+	for line in vcf_file:
+		cols = line[:-1].split('\t')
+		pos = int(cols[1])
+		bin = (pos - 1) / step
+
+		vpos = variant_pos[cols[0]]
+		vpos[bin] = -1 if vpos[bin] > 0 and vpos[bin] != pos else pos
+		if bin > 0:
+			vpos[bin-1] = -1 if vpos[bin-1] > 0 and vpos[bin-1] != pos else pos
+
+		mut = mutated[cols[0]]
+		for s, gt in enumerate(cols[sample_col:]):
+			if gt_symbols.index(gt.split(':')[0]) <= 1: continue
+			mut[bin, s] = True
+			if bin > 0: mut[bin-1, s] = True
+
+	# Convert mutation bitmasks into counts
+	print('Convert to counts...')
+	for chr in mutated:
+		mutated[chr] = np.sum(mutated[chr], axis=1)
+
+	# Print regions in descending order starting with highest recurrence
+	print('Find maximum...')
+	highest = 0
+	for chr in mutated:
+		highest = max(highest, np.amax(mutated[chr]))
+
+	print('Top regions with two or more mutated sites:')
+	for n in range(highest, 1, -1):
+		for chr in mutated:
+			mut = mutated[chr]
+			vpos = variant_pos[chr]
+			for bin in range(len(mut)):
+				if mut[bin] != n or vpos[bin] != -1: continue
+				print('%s:%d-%d\t%d samples' % (
+					chr, bin*step+1, bin*step+region_size, n))
+
+
+
+
+
+
+
+
 
 
 
@@ -620,7 +837,7 @@ def variant_statistics(vcf_path):
 # VARIANT KEEP SAMPLES #
 ########################
 
-def variant_keep_samples(vcf_path, samples, discard=False):
+def variant_keep_samples(vcf_path, regex, discard=False):
 	vcf_file = zopen(vcf_path)
 	for line in vcf_file:
 		if not line.startswith('#'): break
@@ -628,7 +845,7 @@ def variant_keep_samples(vcf_path, samples, discard=False):
 	headers = line[:-1].split('\t')
 	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
 
-	keep_col = [c < sample_col or (sample in samples) != discard
+	keep_col = [c < sample_col or (re.search(regex, sample) != None) != discard
 		for c, sample in enumerate(headers)]
 	
 	print('\t'.join(c for c, keep in zip(headers, keep_col) if keep))
@@ -768,13 +985,20 @@ if __name__ == '__main__':
 	elif args['rank']:
 		variant_rank(args['<vcf_file>'])
 	elif args['keep'] and args['samples']:
-		variant_keep_samples(args['<vcf_file>'], args['<samples>'])
+		variant_keep_samples(args['<vcf_file>'], args['<regex>'])
 	elif args['discard'] and args['samples']:
-		variant_keep_samples(args['<vcf_file>'], args['<samples>'], True)
+		variant_keep_samples(args['<vcf_file>'], args['<regex>'], True)
 	elif args['plot'] and args['evidence']:
 		variant_plot_evidence(args['<vcf_file>'])
 	elif args['statistics']:
 		variant_statistics(args['<vcf_file>'])
+	elif args['signature']:
+		variant_signature(args['<vcf_file>'], args['<genome_fasta>'])
+	elif args['top'] and args['mutated'] and args['sites']:
+		variant_top_mutated_sites(args['<vcf_file>'])
+	elif args['top'] and args['mutated'] and args['regions']:
+		variant_top_mutated_regions(args['<vcf_file>'],
+			int(args['<region_size>']))
 	elif args['heterozygous'] and args['bases']:
 		variant_heterozygous_bases(args['<vcf_file>'], args['<pos_file>'])
 	elif args['allele'] and args['fractions']:
