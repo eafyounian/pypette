@@ -4,8 +4,8 @@
 Download sequencing data from the Cancer Genomics Hub.
 
 Usage:
-  cghub list <cancer> <library_type> [--samples=FILE]
-  cghub download <cancer> <library_type> [--samples=FILE]
+  cghub list <cancer> <library_type> [--filename=REGEXP]
+  cghub download <cancer> <library_type> [--filename=REGEXP]
 
 Options:
   -h --help     Show this screen.
@@ -103,8 +103,7 @@ def cghub_download(samples):
 		
 		info('Downloading %s...' % filename)
 		while not shell('/data/csb/tools/cghub/bin/gtdownload -v -d %s '
-			'-c /data/csb/tools/cghub/share/cghub_20131029.key '
-			'-C /data/csb/tools/cghub/share/GeneTorrent' % 
+			'-c /data/csb/tools/cghub/cghub_20131029.key' % 
 			sample.analysis_data_uri):
 			time.sleep(60)
 			
@@ -122,10 +121,9 @@ if __name__ == '__main__':
 	samples = cghub_query(query)
 
 	# Filter the samples if the user has provided a whitelist
-	if args['--samples']:
-		whitelist = [line.rstrip() for line in open(args['--samples'])]
-		samples = [s for s in samples if
-			any(re.search(rx, s.files[0][0]) for rx in whitelist if rx)]
+	if args['--filename']:
+		rx = args['--filename']
+		samples = [s for s in samples if re.search(rx, s.files[0][0])]
 	
 	if args['list']:
 		cghub_list(samples)
