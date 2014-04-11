@@ -83,8 +83,10 @@ def parallel(command, job_name, max_parallel, cpus, memory, partition,
 	os.makedirs(script_dir)
 	scripts = ['%s/%s.queued' % (script_dir, sanitize_path(token))
 		for token in tokens]
-	
+
 	if len(set(scripts)) < len(scripts):
+		for s in scripts:
+			if sum(s == x for x in scripts) > 1: print(s)
 		error('Input list contains multiple instances of some items.')
 		
 	for token, script in zip(tokens, scripts):
