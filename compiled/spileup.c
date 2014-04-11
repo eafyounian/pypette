@@ -59,8 +59,6 @@ void print_alleles(AlleleList* list) {
 }
 
 int parse_pileup(char* bases, char* quality, AlleleList* alleles) {
-	alleles->total = 0;
-	
 	//printf("Bases: %s\n", bases);
 	//printf("Quality: %s\n", quality);
 	
@@ -69,7 +67,7 @@ int parse_pileup(char* bases, char* quality, AlleleList* alleles) {
 		if (bases[i] == ',') {
 			bases[i] = '.';
 		} else {
-			bases[i] = tolower(bases[i]);
+			bases[i] = toupper(bases[i]);
 		}
 	}
 	
@@ -103,7 +101,7 @@ int main(int argc, char** argv) {
 	int min_alt_reads = strtol(argv[1], NULL, 10);
 	min_mapq = strtol(argv[2], NULL, 10);
 	
-	int bufsize = 1000 * 1000;
+	int bufsize = 1024 * 1024;
 	char line[bufsize];
 	
 	int tabs[2*MAX_SAMPLES];    // Tab character locations
@@ -123,8 +121,21 @@ int main(int argc, char** argv) {
 
 		int S = 0, i = 2;
 		while (i < ntabs) {
-			if (line[tabs[i]+1] == '0') { i += 3; }
-			else {
+			sample_alleles[S].total = 0;
+			if (!isdigit(line[tabs[i]+1])) {
+				printf("Parse error."); return -1;
+			}
+
+			// If there are no reads overlapping the base, samtools mpileup
+			// outputs three columns: "0\t*\t*".
+			// If there are reads overlapping the base, samtools mpileup
+			// outputs four columns. Once I observed samtools outputting
+			// four columns despite zero reads: "0\t\t\t". This is why
+			// the code only assumes three columns if first column is "0" and
+			// second column is "*".
+			if (line[tabs[i]+1] == '0' && line[tabs[i+1]+1] == '*') {
+				i += 3;
+			} else {
 				parse_pileup(line + tabs[i+1] + 1, line + tabs[i+3] + 1,
 					&sample_alleles[S]);
 				i += 4;
@@ -138,7 +149,8 @@ int main(int argc, char** argv) {
 			AlleleList* alleles = &sample_alleles[s];
 			int alt_alleles = 0;
 			for (int a = 0; a < alleles->total; a++) {
-				if (alleles->alleles[a].seq[0] == '.') continue;
+				if (alleles->alleles[a].seq[0] == '.' &&
+					alleles->alleles[a].seq[1] == '\0') continue;
 				if (alleles->alleles[a].high_count > best_alt_reads)
 					best_alt_reads = alleles->alleles[a].high_count;
 			}
