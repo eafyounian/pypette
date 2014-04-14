@@ -22,7 +22,7 @@ from __future__ import print_function
 import sys, docopt, re, os, itertools
 from collections import defaultdict, namedtuple
 from pypette import info, shell, zopen, mkdir, error, read_flat_seq, revcomplement
-import numpypy as np
+import numpy as np
 
 
 
