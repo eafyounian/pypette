@@ -244,37 +244,39 @@ def sam_pileup(region, bam_paths, min_al_quality=0):
 	bam_paths = [path for path in bam_paths if os.path.isfile(path)]
 	if not bam_paths: return
 	
-	m = re.match('(.+):(\d+)', region)
-	if not m:
-		error('Region must be specified in the form chr1:142423.')
-		
-	region = '%s:%s-%s' % (m.group(1), m.group(2), m.group(2))
-	
+	chr, region = region.replace(' ', '').split(':')
+	region = [int(x) for x in region.split('-')]
+	if len(region) == 1: region *= 2
+
 	dev_null = open('/dev/null', 'a')
-	
 	indel_rx = re.compile('(\w[+-]\d+)?(\w+)(?![+-])')
-	
-	for bam in bam_paths:
-		line = subprocess.check_output('samtools mpileup -q%d -r %s %s' %
-			(min_al_quality, region, bam), shell=True, stderr=dev_null)
-		sample_name = re.sub(r'(.*/)?(.*).bam', r'\2', bam)
-		if not line:
-			print('%s\t' % sample_name)
-		else:
-			tokens = line[:-1].split('\t')
-			bases = re.sub(r'\^.', '', tokens[4]).upper()
-			bases = re.sub(r'[$<>]', '', bases)
-			
-			# Parse the pileup string for indels
-			indel_tokens = indel_rx.findall(bases)
-			bases = ''.join([m[1][int(m[0][2:]):] if m[0] else m[1]
-				for m in indel_tokens])
-			indels = [m[0][:2] + m[1][:int(m[0][2:])]
-				for m in indel_tokens if m[0]]
-			
-			bases = ''.join(sorted(bases))
-			if bases: bases += ' '
-			print('%s\t%s%s' % (sample_name, bases, ' '.join(indels)))
+
+	for pos in range(region[0], region[1]+1):
+		if region[0] != region[1]: print('Pileup for %s:%d:' % (chr, pos))
+		
+		for bam in bam_paths:
+			line = subprocess.check_output(
+				'samtools mpileup -q%d -r %s:%d-%d %s' %
+				(min_al_quality, chr, pos, pos, bam), shell=True,
+				stderr=dev_null)
+			sample_name = re.sub(r'(.*/)?(.*).bam', r'\2', bam)
+			if not line:
+				print('%s\t' % sample_name)
+			else:
+				tokens = line[:-1].split('\t')
+				bases = re.sub(r'\^.', '', tokens[4]).upper()
+				bases = re.sub(r'[$<>]', '', bases)
+				
+				# Parse the pileup string for indels
+				indel_tokens = indel_rx.findall(bases)
+				bases = ''.join([m[1][int(m[0][2:]):] if m[0] else m[1]
+					for m in indel_tokens])
+				indels = [m[0][:2] + m[1][:int(m[0][2:])]
+					for m in indel_tokens if m[0]]
+				
+				bases = ''.join(sorted(bases))
+				if bases: bases += ' '
+				print('%s\t%s%s' % (sample_name, bases, ' '.join(indels)))
 
 	dev_null.close()
 
@@ -290,15 +292,15 @@ def sam_pileup(region, bam_paths, min_al_quality=0):
 	
 def sam_pileup_each(vcf_path, bam_paths, min_al_quality=0):
 	vcf = zopen(vcf_path)
-	for line in vcf:
-		if line.startswith('CHROM'): break
+	#for line in vcf:
+	#	if line.startswith('CHROM'): break
 	
-	headers = line.strip().split('\t')
-	ref_allele_col = headers.index(re.findall('ref\w*', line, re.I)[0])
-	alt_allele_col = headers.index(re.findall('alt\w*', line, re.I)[0])
-	nearby_genes_col = []
-	if re.search('nearby\w*', line, re.I):
-		nearby_genes_col = headers.index(re.findall('nearby\w*', line, re.I)[0])
+	#headers = line.strip().split('\t')
+	#ref_allele_col = headers.index(re.findall('ref\w*', line, re.I)[0])
+	#alt_allele_col = headers.index(re.findall('alt\w*', line, re.I)[0])
+	#nearby_genes_col = []
+	#if re.search('nearby\w*', line, re.I):
+	#	nearby_genes_col = headers.index(re.findall('nearby\w*', line, re.I)[0])
 	
 	for line in vcf:
 		if not line.startswith('chr'): continue
@@ -309,6 +311,7 @@ def sam_pileup_each(vcf_path, bam_paths, min_al_quality=0):
 		sys.stdout.write(line)
 		sam_pileup('%s:%s' % (tokens[0], tokens[1]), bam_paths,
 			min_al_quality=min_al_quality)
+		print()
 
 
 
@@ -324,7 +327,7 @@ def sam_pileup_each(vcf_path, bam_paths, min_al_quality=0):
 #############
 
 def sam_count(bam_paths, bed_path):
-	import numpypy as np
+	import numpy as np
 
 	# bedtools gives cryptic error messages, so we try to help.
 	for bam_path in bam_paths:
@@ -340,9 +343,15 @@ def sam_count(bam_paths, bed_path):
 	regions = [None] * num_regions
 	count = np.zeros((num_regions, len(bam_paths)), dtype=np.int32)
 
+	# bedtools multicov is faster if we have few regions. bedtools coverage
+	# is faster if we have many regions.
+	if num_regions < 1000:
+		command = 'bedtools multicov -split -bams %s -bed %s'
+	else:
+		command = 'bedtools coverage -split -counts -abam %s -b %s'
+
 	for s, bam_path in enumerate(bam_paths):
-		for r, line in enumerate(shell_stdout(
-			'bedtools coverage -split -counts -abam %s -b %s' %
+		for r, line in enumerate(shell_stdout(command %
 			(bam_paths[s], bed_path))):
 			last_tab = line.rfind('\t')
 			if s == 0: regions[r] = line[:last_tab]
