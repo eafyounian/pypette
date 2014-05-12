@@ -338,7 +338,7 @@ def sam_count(bam_paths, bed_path):
 	bed_file = open(bed_path)
 	num_regions = 0
 	for line in bed_file:
-		if line.startswith('chr'): num_regions += 1
+		if not line.startswith('#'): num_regions += 1
 
 	regions = [None] * num_regions
 	count = np.zeros((num_regions, len(bam_paths)), dtype=np.int32)
