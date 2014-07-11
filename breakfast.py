@@ -225,7 +225,10 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 		mpos = int(al[3])
 		seq = prev[0][prev[0].find('_')+1:]
 		full_len = len(seq)
-		
+
+		if not chr.startswith('chr'): chr = 'chr' + chr
+		if not mchr.startswith('chr'): mchr = 'chr' + mchr
+
 		# Ignore anchor pairs where the anchors are too close.
 		if chr == mchr and abs(pos - mpos) < min_rearrangement_size:
 			continue
