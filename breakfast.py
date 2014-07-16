@@ -206,7 +206,7 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 	# FIXME: Would be nice to do this one chromosome at a time, so we wouldn't
 	# need to use 3 gigabytes of memory.
 	chromosomes = read_flat_seq(genome_path)
-	for chr in list(chromosomes.items()):
+	for chr in list(chromosomes.keys()):
 		if not chr.startswith('chr'):
 			chromosomes['chr' + chr] = chromosomes.pop(chr)
 	
