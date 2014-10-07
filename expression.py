@@ -11,8 +11,6 @@ Usage:
   expression normalize mor <expr_file>
   expression exon outliers <expr_file>
   expression visualize splicing <genes> <fastq_prefix> <out_prefix>
-  expression sqlite exons <expr_file> <sqlite_file>
-  expression sqlite genes <expr_file>
 
 Options:
   -h --help      Show this screen.
@@ -34,6 +32,14 @@ import numpy as np
 # EXPRESSION SUMMARIZE #
 ########################
 
+class MergedFeature:
+	def __init__(self, num_samples):
+		self.expr = np.zeros(num_samples)
+		self.total_len = 0
+		self.chromosome = ''
+		self.start = -1
+		self.end = -1
+
 def summarize(exon_expr_path):
 	file = zopen(exon_expr_path)
 	header = next(file)
@@ -44,16 +50,22 @@ def summarize(exon_expr_path):
 	for line in file:
 		cols = line.rstrip().split('\t')
 		if len(cols) < S: continue
-		fname = cols[3]
+		chr = cols[0]
+		start = int(cols[1]) + 1
+		end = int(cols[2])
 		expr = np.array([float(x) for x in cols[4:]])
 		
-		f = features.setdefault(cols[3], [np.zeros(S), 0])
-		f[0] += expr
-		f[1] += int(cols[2]) - int(cols[1])
+		f = features.setdefault(cols[3], MergedFeature(S))
+		f.expr += expr
+		f.total_len += end - start + 1
+		f.chromosome = chr
+		if f.start == -1 or f.start > start: f.start = start
+		if f.end == -1 or f.end < end: f.end = end
 	
-	print('FEATURE\tLENGTH\t' + '\t'.join(samples))
+	print('CHROM\tSTART\tEND\tNAME\tLENGTH\t' + '\t'.join(samples))
 	for name, f in features.iteritems():
-		print('%s\t%d\t%s' % (name, f[1], '\t'.join(str(e) for e in f[0])))
+		print('%s\t%d\t%d\t%s\t%d\t%s' % (f.chromosome, f.start, f.end,
+			name, f.total_len, '\t'.join(str(e) for e in f.expr)))
 
 
 
@@ -74,12 +86,14 @@ def ensembl_to_hugo(expr_path, gtf_path):
 	file = zopen(expr_path)
 	header = next(file)
 	headers = header[:-1].split('\t')
-	feature_col = headers.index('FEATURE')
+	feature_col = headers.index('NAME')
 	
 	sys.stdout.write(header)
 	for line in file:
 		cols = line[:-1].split('\t')
-		cols[feature_col] = translations[cols[feature_col]] + ':' + cols[feature_col]
+		translated = translations.get(cols[feature_col])
+		if translated:
+			cols[feature_col] = translated + ':' + cols[feature_col]
 		print('\t'.join(cols))
 	
 
@@ -158,42 +172,6 @@ def normalize_rpkm(expr_path, bed_path):
 
 
 
-
-
-###########################
-# EXPRESSION SQLITE EXONS #
-###########################
-
-def sqlite_exons(expr_path, sqlite_path):
-	import sqlite3
-	db = sqlite3.connect(sqlite_path, isolation_level=None)
-	db.execute('PRAGMA synchronous = off;')
-	db.execute('''CREATE TABLE exons (
-		gene TEXT, exon INTEGER, chrom TEXT, start INTEGER, end INTEGER,
-		expression TEXT);''')
-	db.execute('CREATE TABLE clinical (key TEXT, value TEXT);')
-	
-	file = zopen(expr_path)
-	header = next(file)
-	samples = header[:-1].split('\t')[4:]
-	S = len(samples)
-	
-	features = {}
-	
-	for line in file:
-		cols = line[:-1].split('\t')
-		fname = cols[3]
-		expr = np.array(float(x) for x in line[:-1].split('\t')[4:])
-		
-		f = features.setdefault(cols[3], [np.zeros(S), 0])
-		f[0] += expr
-		f[1] += int(cols[2]) - int(cols[1])
-	
-	print('FEATURE\tLENGTH\t' + '\t'.join(samples))
-	for name, f in features.iteritems():
-		print('%s\t%d\t%s' % (name, f[1], '\t'.join(str(e) for e in expr)))
-	
-	db.close()
 	
 	
 	
@@ -352,7 +330,6 @@ if __name__ == '__main__':
 			args['<out_prefix>'])
 	elif args['exon'] and args['outliers']:
 		exon_outliers(args['<expr_file>'])
-	elif args['sqlite'] and args['exons']:
-		sqlite_exons(args['<expr_file>'], args['<sqlite_file>'])
+
 	
 

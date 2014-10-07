@@ -10,6 +10,7 @@ Usage:
   fasta split interleaved <fasta> <tag_length>
   fasta trim <fasta> <trim_length>
   fasta find adapters <fasta> <seed>
+  fasta remove adapters <fasta> <adapter>
   fasta color2nuc <fasta>
   fasta rna2dna <fasta>
   fasta dna2rna <fasta>
@@ -172,6 +173,50 @@ def fasta_find_adapters(fasta_path, seed):
 	suffix_count = Counter(suffixes)
 	for suffix, count in suffix_count.most_common(20):
 		print('%s\t%d' % (suffix, count))
+
+
+
+
+
+
+
+
+
+#########################
+# FASTA REMOVE ADAPTERS #
+#########################
+
+def fasta_remove_adapters(fasta_path, adapter):
+	# Convert the adapter into a regular expression
+	if len(adapter) < 5: error('Adapter sequence is too short.')
+	adapter_re = adapter[:5]
+	for base in adapter[5:]:
+		adapter_re += '(?:' + base
+	adapter_re += (len(adapter) - 5) * ')?'
+	adapter_re = re.compile(adapter_re)
+
+	info('Adapter regular expression: %s' % adapter_re)
+
+	fasta = zopen(fasta_path)
+	for line in fasta:
+		if line[0] == '#':
+			sys.stdout.write(line)
+		elif line[0] == '>':
+			sys.stdout.write(line)
+			seq = next(fasta)[:-1]
+			m = adapter_re.search(seq)
+			if m: seq = seq[:m.start()]
+			print(seq)
+		elif line[0] == '@':
+			sys.stdout.write(line)
+			seq = next(fasta)[:-1]
+			m = adapter_re.search(seq)
+			trim_len = m.start() if m else len(seq)
+			print(seq[:trim_len])
+			sys.stdout.write(next(fasta))
+			print(next(fasta)[:trim_len])
+
+
 
 
 
@@ -466,6 +511,8 @@ if __name__ == '__main__':
 		fasta_rna_to_dna(args['<fasta>'])
 	elif args['adapters'] and args['find']:
 		fasta_find_adapters(args['<fasta>'])
+	elif args['remove'] and args['adapters']:
+		fasta_remove_adapters(args['<fasta>'], args['<adapter>'])
 	elif args['from'] and args['sra']:
 		fasta_from_sra(args['<sra_file>'])
 

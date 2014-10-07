@@ -5,13 +5,14 @@ Tools for the manipulation of SAM and BAM files.
 
 Usage:
   sam reads <bam_file> [<out_prefix>]
+  sam reads compact <bam_file> [<out_prefix>]
   sam unaligned reads <bam_file>
   sam discordant pairs [-q N] <bam_file> <min_distance_kb>
   sam extend fragments <bam_file> [--fragment-length=N]
   sam read length <bam_file>
   sam pileup each <vcf_file> <bam_files>... [--quality=N]
   sam pileup <region> <bam_files>... [--quality=N]
-  sam count <bed_file> <bam_files>...
+  sam count [-s M] <bed_file> <bam_files>...
   sam fragment lengths <bam_file>
   sam translate flags <flags>
   sam statistics <bam_files>...
@@ -23,11 +24,12 @@ Options:
   -p --parallel=N       Number of parallel processes to use [default: 8].
   -P --partition=PART   SLURM partition to run jobs on [default: local].
   -q --quality=N        Minimum alignment quality [default: 15].
+  -s --strand=M         Strand specific read counts [default: none].
 """
 
 from __future__ import print_function
 import sys, subprocess, docopt, re, os
-from pypette import zopen, shell, info, error, temp_dir, shell_stdout
+from pypette import zopen, shell, info, error, shell_stdout
 
 
 def read_sam(sam_path, mode='', min_quality=0):
@@ -88,12 +90,9 @@ def sam_reads(bam_path, out_prefix):
 	# FIXME: We assume that each read only has one alignment in the BAM file.
 	for al in read_sam(bam_path):
 		flags = int(al[1])
-			
-		paired = 0
-		if flags & 0x40: paired = 1
-		elif flags & 0x80: paired = 2
+		if flags & 0x900: continue   # No secondary or supplementary alignments
 		
-		if paired == 1:
+		if flags & 0x40:
 			rname = al[0][:-2] if al[0].endswith('/1') else al[0]
 			mate = reads_2.pop(rname, None)
 			if mate:
@@ -102,7 +101,7 @@ def sam_reads(bam_path, out_prefix):
 			else:
 				reads_1[rname] = (al[9], al[10])
 		
-		elif paired == 2:
+		elif flags & 0x80:
 			rname = al[0][:-2] if al[0].endswith('/2') else al[0]
 			mate = reads_1.pop(rname, None)
 			if mate:
@@ -114,6 +113,8 @@ def sam_reads(bam_path, out_prefix):
 		else:
 			fastq.write('@%s\n%s\n+\n%s\n' % (al[0], al[9], al[10]))
 
+	info('Found %d orphan first mates.' % len(reads_1))
+	info('Found %d orphan second mates.' % len(reads_2))
 
 	if len(reads_1) > 0:
 		for rname, read in reads_1.iteritems():
@@ -126,6 +127,68 @@ def sam_reads(bam_path, out_prefix):
 	fastq_1.close()
 	fastq_2.close()
 	fastq.close()
+
+
+
+
+
+
+
+
+#####################
+# SAM READS COMPACT #
+#####################
+
+def sam_reads_compact(bam_path, out_prefix):
+
+	out_1 = zopen('%s_1.reads.gz' % out_prefix, 'w')
+	out_2 = zopen('%s_2.reads.gz' % out_prefix, 'w')
+	out = zopen('%s.reads.gz' % out_prefix, 'w')
+	
+	reads_1 = {}
+	reads_2 = {}
+		
+	# FIXME: We assume that each read only has one alignment in the BAM file.
+	for al in read_sam(bam_path):
+		flags = int(al[1])
+		if flags & 0x900: continue   # No secondary or supplementary alignments
+		if flags & 0x400: continue   # No PCR or optical duplicates
+		
+		if flags & 0x40:
+			rname = al[0][:-2] if al[0].endswith('/1') else al[0]
+			mate = reads_2.pop(rname, None)
+			if mate:
+				out_1.write('%s\n' % al[9])
+				out_2.write('%s\n' % mate)
+			else:
+				reads_1[rname] = al[9]
+		
+		elif flags & 0x80:
+			rname = al[0][:-2] if al[0].endswith('/2') else al[0]
+			mate = reads_1.pop(rname, None)
+			if mate:
+				out_1.write('%s\n' % mate)
+				out_2.write('%s\n' % al[9])
+			else:
+				reads_2[rname] = al[9]
+				
+		else:
+			out.write('%s\n' % al[9])
+
+	info('Found %d orphan first mates.' % len(reads_1))
+	info('Found %d orphan second mates.' % len(reads_2))
+
+	if len(reads_1) > 0:
+		for read in reads_1.itervalues(): out.write('%s\n' % read)
+	
+	if len(reads_2) > 0:
+		for read in reads_2.itervalues(): out.write('%s\n' % read)
+
+	out_1.close()
+	out_2.close()
+	out.close()
+
+
 
 
 
@@ -423,6 +486,10 @@ def sam_flags(flags):
 		'- Aligned to forward reference')
 	if flags & 0x100:
 		print('- Secondary alignment')
+	if flags & 0x200:
+		print('- Did not pass quality controls')
+	if flags & 0x400:
+		print('- PCR or optical duplicate')
 	
 
 
@@ -483,6 +550,8 @@ if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
 	if args['unaligned'] and args['reads']:
 		sam_unaligned_reads(args['<bam_file>'])
+	elif args['reads'] and args['compact']:
+		sam_reads_compact(args['<bam_file>'], args['<out_prefix>'])
 	elif args['reads']:
 		sam_reads(args['<bam_file>'], args['<out_prefix>'])
 	elif args['discordant'] and args['pairs']:

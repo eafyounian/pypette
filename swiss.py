@@ -1,7 +1,7 @@
 #!/bin/env pypy
 
 """
-Tools for miscellaneous file related tasks.
+Tools for miscellaneous tasks.
 
 Usage:
   swiss rename <tsv_file>
@@ -14,6 +14,8 @@ Usage:
   swiss split wig [-H] <wig_file> <out_prefix>
   swiss ega checksum <tsv_file>
   swiss draw karyotype
+  swiss annotate <input_file> <bed_file>
+  swiss count segments <min> <max> <seg_files>...
 
 Options:
   -h --help             Show this screen.
@@ -21,7 +23,7 @@ Options:
 """
 
 from __future__ import print_function
-import sys, docopt, re, os, xlrd, csv
+import sys, docopt, re, os, xlrd, csv, itertools
 from collections import defaultdict
 from datetime import datetime
 from pypette import zopen, shell, read_fasta, revcomplement, GenomicFeatures
@@ -68,11 +70,12 @@ def swiss_link(tsv_path):
 		if not os.path.exists(source):
 			info('Source file %s does not exist.' % source)
 			continue
-		if os.path.exists(dest):
+		if os.path.lexists(dest):
 			info('Destination file %s exists. Will not overwrite.' % dest)
 			continue
 		
 		os.symlink(source, dest)
+
 
 
 
@@ -316,12 +319,126 @@ def swiss_draw_karyotype():
 
 
 
+
+
+
+
+
+
+##################
+# SWISS ANNOTATE #
+##################
+
+def distance(pos, region):
+	return max([0, region[0] - pos, pos - region[1]])
+
+def swiss_annotate(input_path, bed_path):
+	features = []
+	for line in zopen(bed_path):
+		c = line.rstrip().split('\t')
+		features.append((c[0], c[5], (int(c[1]), int(c[2])), c[3]))
+
+	for line in zopen(input_path):
+		t = line.rstrip().split('\t')
+		chr, pos = None, None
+
+		m = re.match(r'(chr.+):(\d+)', t[0])
+		if m:
+			chr = m.group(1)
+			pos = int(m.group(2))
+
+		if chr == None:
+			sys.stdout.write(line)
+			continue
+		
+		nearby = []
+		for f in features:
+			if f[0] != chr: continue
+			dist = distance(pos, f[2])
+			if dist < 50000:
+				nearby.append((re.sub(' \(ENSG.*?\)', '', f[3]), dist))
+
+		nearby.sort(key=lambda x: x[1])
+		sys.stdout.write(line[:-1])
+		sys.stdout.write('\t')
+		print(','.join(['%s (%d)' % f for f in nearby]))
+
+
+
+
+
+
+########################
+# SWISS COUNT SEGMENTS #
+########################
+
+def swiss_count_segments(seg_paths, range):
+
+	samples = seg_paths
+
+	# Read all segments into memory
+	segments = defaultdict(lambda: defaultdict(list))
+	for seg_path in seg_paths:
+		seg_file = open(seg_path)
+		line = next(seg_file)   # Discard headers
+		sample_segs = segments[seg_path]
+		for line in seg_file:
+			cols = line.split('\t')
+			sample_segs[cols[1]].append(
+				(int(cols[2]), int(cols[3]), float(cols[4])))
+		seg_file.close()
+
+	# For each chromosome, find the union of segment breakpoints
+	union = {}
+	chromosomes = segments[segments.keys()[0]].keys()
+	for chr in chromosomes:
+		breakpoints = []
+		for sample in segments:
+			breakpoints += (seg[0] for seg in segments[sample][chr])
+			breakpoints.append(max(seg[1] for seg in segments[sample][chr]))
+		union[chr] = sorted(set(breakpoints))
+		union[chr] = zip(union[chr][:-1], union[chr][1:])
+
+	# Now collect segment values across all samples
+	values = defaultdict(lambda: defaultdict(list))
+	for sample in segments:
+		for chr in chromosomes:
+			val = values[sample][chr]
+			segs = segments[sample][chr]
+			for useg in union[chr]:
+				match = [seg for seg in segs if
+					useg[0] >= seg[0] and useg[1] <= seg[1]]
+				if len(match) != 1:
+					val.append(float('NaN'))
+					continue
+					#print([sample, chr, useg])
+					#print(segs)
+					#error('No encompassing segment found.')
+				match = match[0]
+				val.append(match[2])
+
+	for chr in chromosomes:
+		for n, useg in enumerate(union[chr]):
+			matches = sum(range[0] <= values[sample][chr][n] <= range[1]
+				for sample in values)
+			print('%s\t%d\t%d\t%d' % (chr, useg[0], useg[1], matches))
+
+
+
+
+
+
+
+
+
+
+
 #######################
 # COMMAND LINE PARSER #
 #######################
 
 if __name__ == '__main__':
-	args = docopt.docopt(__doc__)
+	args = docopt.docopt(__doc__, options_first=True)
 	if args['rename']:
 		swiss_rename(args['<tsv_file>'])
 	elif args['link']:
@@ -343,4 +460,9 @@ if __name__ == '__main__':
 		swiss_ega_checksum(args['<tsv_file>'])
 	elif args['draw'] and args['karyotype']:
 		swiss_draw_karyotype()
+	elif args['annotate']:
+		swiss_annotate(args['<input_file>'], args['<bed_file>'])
+	elif args['count'] and args['segments']:
+		swiss_count_segments(args['<seg_files>'],
+			(float(args['<min>']), float(args['<max>'])))
 

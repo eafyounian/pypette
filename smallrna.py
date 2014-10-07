@@ -4,7 +4,7 @@
 Calculate small RNA expression based on high throughput sequencing data.
 
 Usage:
-  smallrna expression fasta [--adapter=SEQ] <srna_reference> <reads>...
+  smallrna expression <srna_fasta> <reads>...
   smallrna expression bgi <srna_fasta> <count_files>...
   smallrna parse mirbase <mirbase_gff>
 
@@ -16,8 +16,8 @@ Options:
 from __future__ import print_function
 import sys, subprocess, docopt, re, datetime, pwd, os
 from collections import Counter, defaultdict
-from pypette import read_fasta, error, info
-import numpypy as np
+from pypette import read_fasta, error, info, zopen
+import numpy as np
 
 def write_fasta(seq_dict, fasta_path):
 	fasta = open(fasta_path, 'w')
@@ -25,6 +25,51 @@ def write_fasta(seq_dict, fasta_path):
 		fasta.write('>%s\n%s\n' % (k, v))
 	fasta.close()
 	
+
+
+
+
+
+
+def smallrna_expression(read_paths, srna_reference_path):
+	
+	S = len(read_paths)
+	min_other_reads = 100
+	
+	# Read the FASTA file containing small RNA reference sequences and
+	# construct a new FASTA file that includes potential isoforms and
+	# variants of these small RNA sequences.
+	info('Constructing database of reference small RNA sequences...')
+	seq_names = defaultdict(lambda: '')
+	counts = defaultdict(lambda: np.zeros(S))
+
+	for name, seq in read_fasta(srna_reference_path).iteritems():
+		name = re.sub(' MIMAT.*', '', name)
+		seq = seq.upper().replace('U', 'T')
+		seq_names[seq] = name
+		seq_names[seq[:-1]] = name + '-1'
+		seq_names[seq + 'A'] = name + '+A'
+		seq_names[seq + 'C'] = name + '+C'
+		seq_names[seq + 'G'] = name + '+G'
+		seq_names[seq + 'T'] = name + '+T'
+	
+	info('Counting reads aligning to small RNA sequences...')
+	for s, read_path in enumerate(read_paths):
+		fasta = zopen(read_path)
+		for line in fasta:
+			if not line or line[0] == '#': continue
+			if line[0] in '>@':
+				seq = next(fasta)[:-1]
+				counts[seq][s] += 1
+
+	counts = { seq: count for seq, count in counts.iteritems()
+		if seq in seq_names or sum(count >= min_other_reads) >= 2 }
+	
+	print('NAME\tSEQUENCE\t%s' % '\t'.join(read_paths))
+	for seq in sorted(counts.iterkeys(), key=lambda x: seq_names[x]):
+		sys.stdout.write('%s\t%s' % (seq_names[seq], seq))
+		for x in counts[seq]: sys.stdout.write('\t%d' % x)
+		sys.stdout.write('\n')
 
 
 
@@ -161,6 +206,8 @@ if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
 	if args['expression'] and args['bgi']:
 		smallrna_expression_bgi(args['<count_files>'],args['<srna_fasta>'])
+	elif args['expression']:
+		smallrna_expression(args['<reads>'], args['<srna_fasta>'])
 	elif args['parse'] and args['mirbase']:
 		smallrna_parse_mirbase(args['<mirbase_gff>'])
 

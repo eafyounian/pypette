@@ -655,7 +655,7 @@ def generate_blacklist(sv_files, min_frequency=0):
 	sample_variants = [[] for s in range(S)]
 	
 	for s, sv_file in enumerate(sv_files):
-		for line in open(sv_file):
+		for line in zopen(sv_file):
 			if not line.startswith('chr'): continue
 			sample_variants[s] += sv_locus_identifiers(line)
 	

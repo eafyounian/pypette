@@ -4,17 +4,20 @@
 Tools for copy number analysis and visualization.
 
 Usage:
-  coverage tiled <bam_file> <window_size> [-S|-P|-M] [-s N] [-q N]
+  coverage tiled <bam_file> <window_size> [-s N] [-q N] [-S|-1|-2] [-P|-M] 
   coverage cds <bam_file> <gtf_file>
   coverage telomere <bam_file>
   coverage logratio <test_wig> <ref_wig> <min_ref>
   coverage downsample <wig_file> <fold>
+  coverage sum <wig_files>...
+  coverage unbias logratios <wig_file>
+  coverage median filter <wig_file> <window_size>
   coverage format igv <wig_file>
 
 Options:
   -h --help         Show this screen.
   -q --quality=N    Minimum alignment quality [default: 10].
-  -s --step=N       Step size for window placement [default: window size].
+  -s --step=N       Step size for window placement [default: window size / 2].
   -S --single       Use all reads for coverage calculation, not just paired.
   -P --plus         Calculate coverage only for the plus strand.
   -M --minus        Calculate coverage only for the minus strand.
@@ -23,35 +26,41 @@ Options:
 from __future__ import print_function
 import sys, docopt, re, os
 from pypette import zopen, shell, revcomplement, info, error, shell_stdout
+from pypette import Object
 from sam import read_sam, ref_sequence_sizes
-import numpypy as np
+import numpy as np
 
 
 
-
+class WigTrack: pass
 
 def read_fixed_wig(wig_path):
-	header_re = re.compile('chrom=(\w+) .* step=(\d+)')
 	tracks = {}
 	chr = ''
 	for line in zopen(wig_path):
 		if line.startswith('fixedStep'):
-			if chr: tracks[chr] = cov[0:N]  # Remove preallocated space
-			m = header_re.search(line)
+			if chr:
+				track.values = values[0:N]	 # Remove preallocated space
+			track = Object()
+			values = np.zeros(1000000)
+			m = re.search(r'chrom=(\w+)', line)
 			chr = m.group(1)
-			step = int(m.group(2))
-			cov = np.zeros(1000000)
+			m = re.search(r'start=(\d+)', line)
+			track.start = int(m.group(1))
+			m = re.search(r'step=(\d+)', line)
+			track.step = int(m.group(1))
+			m = re.search(r'span=(\d+)', line)
+			track.span = int(m.group(1)) if m else -1
 			N = 0
+			tracks[chr] = track
 			continue
 		
-		if not chr: continue
-		#if cov.size < N: cov.resize(cov.size * 2)   # Preallocate more space
-		
-		cov[N] = float(line)
-		N += 1
+		if chr:
+			values[N] = float(line)
+			N += 1
 	
-	if chr: tracks[chr] = cov[0:N]   # Don't forget the last chromosome
-	return (tracks, step)
+	if chr: track.values = values[0:N]	 # Remove preallocated space
+	return tracks
 		
 	
 		
@@ -81,17 +90,15 @@ def coverage_tiled(bam_path, window_size, quality, mode, step,
 	cov = empty
 	chr = ''
 	
-	if mode == 'paired':
-		# Only count concordant paired end reads.
-		for al in read_sam(bam_path, 'A1', min_quality=quality):
+	if 'A' in mode:
+		# Count the entire length of the fragment.
+		for al in read_sam(bam_path, mode, min_quality=quality):
 			pos = int(al[3]); mpos = int(al[7])
 			if al[6] != '=' or abs(pos - mpos) > max_frag_len: continue
 
-			# Discard spliced and clipped reads.
-			if 'N' in al[5] or 'S' in al[5]: continue
-
-			start = (min(pos, mpos)-1 - win_overlap) / step
-			stop = (max(pos, mpos)+len(al[9])-1 + win_overlap) / step
+			# FIXME: Spliced reads are tallied as if they were not spliced.
+			start = (min(pos, mpos) - win_overlap - 1) / step
+			stop = (max(pos, mpos) + len(al[9]) - 1) / step
 			if al[2] != chr:
 				chr = al[2]
 				cov = chr_cov.get(al[2], empty)
@@ -101,17 +108,13 @@ def coverage_tiled(bam_path, window_size, quality, mode, step,
 			cov[start:stop+1] += 1
 		
 	else:
-		sam_flags = {'single': 'a', 'plus': 'a+', 'minus': 'a-'}
-			
 		# Count all individual reads.
-		for al in read_sam(bam_path, sam_flags[mode], min_quality=quality):
+		for al in read_sam(bam_path, mode, min_quality=quality):
 			pos = int(al[3])
 
-			# Discard spliced and clipped reads.
-			if 'N' in al[5] or 'S' in al[5]: continue
-
-			start = (pos-1 - win_overlap) / step
-			stop = (pos+len(al[9])-1 + win_overlap) / step
+			# FIXME: Spliced reads are tallied as if they were not spliced.
+			start = (pos - win_overlap - 1) / step
+			stop = (pos + len(al[9]) - 1) / step
 			if al[2] != chr:
 				chr = al[2]
 				cov = chr_cov.get(al[2], empty)
@@ -120,7 +123,6 @@ def coverage_tiled(bam_path, window_size, quality, mode, step,
 			stop = min(stop, cov.size-1)
 			cov[start:stop+1] += 1
 
-	
 	for chr in chr_cov:
 		print('fixedStep chrom=%s start=1 step=%d' % (chr, step))
 		for x in chr_cov[chr]: print(x)
@@ -202,18 +204,26 @@ def coverage_telomere(bam_path):
 #####################
 
 def coverage_logratio(test_wig_path, ref_wig_path, min_ref=1):
-	if min_ref <= 0:
-		error('<min_ref> must be a positive number.')
+	if min_ref <= 0: error('<min_ref> must be a positive number.')
 		
-	test, step = read_fixed_wig(test_wig_path)
-	ref, step = read_fixed_wig(ref_wig_path)
+	test = read_fixed_wig(test_wig_path)
+	ref = read_fixed_wig(ref_wig_path)
+
+	# Sanity checks
+	for chr in test:
+		if not chr in ref: error('Track %s missing from reference.' % chr)
+		if test[chr].start != ref[chr].start:
+			error('Start coordinate mismatch in track %s.' % chr)
+		if test[chr].step != ref[chr].step:
+			error('Step mismatch in track %s.' % chr)
 	
 	for chr in test:
-		info(chr)
-		#pos = np.where(valid) * step + 1
-		logratios = np.log2(test[chr] / ref[chr])
-		logratios[ref[chr] < min_ref] = np.nan
-		print('fixedStep chrom=%s start=1 step=%d span=%d' % (chr, step, step))
+		logratios = np.log2(test[chr].values / ref[chr].values)
+		logratios[ref[chr].values < min_ref] = np.nan
+		span = test[chr].span
+		print('fixedStep chrom=%s start=%d step=%d%s' % (chr,
+			test[chr].start, test[chr].step,
+			(' span=%d' % span) if span > 0 else ''))
 		for v in logratios: print('%.2f' % v)
 	
 		
@@ -235,6 +245,99 @@ def coverage_downsample(wig_path, fold):
 		print('fixedStep chrom=%s start=1 step=%d span=%d' %
 			(chr, step*fold, step*fold))
 		for v in data: print('%.2f' % v)
+
+
+
+
+
+################
+# COVERAGE SUM #
+################
+		
+def coverage_sum(wig_paths):
+	wigs = [read_fixed_wig(p) for p in wig_paths]
+	for chr in wigs[0]:
+		total = wigs[0][chr].values.copy()
+		for wig in wigs[1:]: total += wig[chr].values
+		span = wigs[0][chr].span
+		print('fixedStep chrom=%s start=%d step=%d%s' % (chr,
+			wigs[0][chr].start, wigs[0][chr].step,
+			(' span=%d' % span) if span > 0 else ''))
+		for v in total: print(v)
+
+
+
+
+
+
+
+
+#############################
+# COVERAGE UNBIAS LOGRATIOS #
+#############################
+		
+def coverage_unbias_logratios(wig_path):
+	wig = read_fixed_wig(wig_path)
+
+	# Find mode for each chromosome
+	modes = {}
+	for chr in wig:
+		bins = np.arange(-4.975, 4.976, .05)
+		hist = np.zeros(len(bins))
+		for val in wig[chr].values:
+			if not -5 <= val < 5: continue
+			hist[int((val + 5) // 0.05)] += 1
+		modes[chr] = bins[np.argmax(hist)]
+
+	mode = sorted(modes.values())[len(modes)/2]
+
+	for chr in wig:
+		values = wig[chr].values
+		values -= mode
+		span = wig[chr].span
+		print('fixedStep chrom=%s start=%d step=%d%s' % (chr,
+			wig[chr].start, wig[chr].step,
+			(' span=%d' % span) if span > 0 else ''))
+		for v in values: print(v)
+
+
+
+
+
+
+
+
+##########################
+# COVERAGE MEDIAN FILTER #
+##########################
+		
+def coverage_median_filter(wig_path, win_size):
+	wig = read_fixed_wig(wig_path)
+
+	for chr in wig:
+		orig = wig[chr].values
+
+
+		bins = np.arange(-4.975, 4.976, .05)
+		hist = np.zeros(len(bins))
+		for val in wig[chr].values:
+			if not -5 <= val < 5: continue
+			hist[int((val + 5) // 0.05)] += 1
+		modes[chr] = bins[np.argmax(hist)]
+
+	mode = sorted(modes.values())[len(modes)/2]
+
+	for chr in wig:
+		values = wig[chr].values
+		values -= mode
+		span = wig[chr].span
+		print('fixedStep chrom=%s start=%d step=%d%s' % (chr,
+			wig[chr].start, wig[chr].step,
+			(' span=%d' % span) if span > 0 else ''))
+		for v in values: print(v)
+
+
+
 
 	
 
@@ -261,12 +364,15 @@ if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
 	if args['tiled']:
 		wsize = int(args['<window_size>'])
-		step = wsize if args['--step'] == 'window size' else int(args['--step'])
+		step = wsize / 2
+		if args['--step'].isdigit(): step = int(args['--step'])
 		
-		mode = 'paired'
-		if args['--single']: mode = 'single'
-		if args['--plus']: mode = 'plus'
-		if args['--minus']: mode = 'minus'
+		mode = 'A'
+		if '-S' in args: mode = 'a'
+		if '-1' in args: mode = 'a1'
+		if '-2' in args: mode = 'a2'
+		if args['--plus']: mode += '+'
+		if args['--minus']: mode += '-'
 		
 		coverage_tiled(args['<bam_file>'], wsize,
 			quality=int(args['--quality']), mode=mode, step=step)
@@ -279,6 +385,12 @@ if __name__ == '__main__':
 			min_ref=float(args['<min_ref>']))
 	elif args['downsample']:
 		coverage_downsample(args['<wig_file>'], int(args['<fold>']))
+	elif args['sum']:
+		coverage_sum(args['<wig_files>'])
+	elif args['unbias'] and args['logratios']:
+		coverage_unbias_logratios(args['<wig_file>'])
+	elif args['median'] and args['filter']:
+		coverage_median_filter(args['<wig_file>'], args['<window_size>'])
 	elif args['format'] and args['igv']:
 		coverage_format_igv(args['<wig_file>'])
 

@@ -5,10 +5,11 @@
 A tool for performing incremental backups of high data volumes.
 
 Usage:
-  backup <rules_file>
+  backup [-y] <rules_file>
 
 Options:
-  -h --help       Show this screen.
+  -h --help     Show this screen.
+  -y --yes      Start backup without confirming with the user.
 
 Author: Matti Annala <matti.annala@tut.fi>
 
@@ -18,7 +19,7 @@ from __future__ import print_function
 import subprocess, sys, re, docopt, os, getpass
 from pypette import shell, shell_stdout, error, Object
 
-def backup(rules_path):
+def backup(rules_path, interactive):
 	passwords = {}
 	rules = []
 	for line in open(rules_path):
@@ -53,7 +54,7 @@ def backup(rules_path):
 		cmds = open('.lftp_script', 'w')
 		cmds.write('open -u %s,%s sftp://%s\n' % (
 			rule.username, rule.password, rule.dst_host))
-		cmds.write('mirror -Rae %s %s %s\n' % (
+		cmds.write('mirror -P3 -Rae %s %s %s\n' % (
 			'--dry-run' if dry_run else '-v', rule.src_dir, rule.dst_dir))
 		cmds.close()
 
@@ -99,8 +100,9 @@ def backup(rules_path):
 	for rule in rules:
 		lftp_mirror(rule, dry_run=True)
 			
-	if not raw_input('Proceed with backup? [y/N] ').lower() in ('y', 'yes'):
-		error('Backup canceled.')
+	if interactive:
+		if not raw_input('Proceed with backup? [y/N] ').lower() in ('y','yes'):
+			error('Backup canceled.')
 	
 	for rule in rules:
 		lftp_mirror(rule)
@@ -116,5 +118,5 @@ def backup(rules_path):
 
 if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
-	backup(args['<rules_file>'])
+	backup(args['<rules_file>'], interactive=(not args['--yes']))
 

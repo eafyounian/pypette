@@ -4,11 +4,14 @@
 Download sequencing data from the Cancer Genomics Hub.
 
 Usage:
-  cghub list <cancer> <library_type> [--filename=REGEXP]
-  cghub download <cancer> <library_type> [--filename=REGEXP]
+  cghub list <cancer> <library_type> [options]
+  cghub download <cancer> <library_type> [options]
 
 Options:
-  -h --help     Show this screen.
+  -h --help                Show this screen.
+  --filename=REGEXP        Regular expression that filename must match.
+  --filename-not-in=PATH   List of filenames that must be excluded.
+  --genome=VERSION         Only show data that matches the specified genome.
 
 Valid sequencing library types:
   WGS, WXS, RNA-Seq, ChIP-Seq, MeDIP-Seq, Bisulfite-Seq
@@ -16,22 +19,20 @@ Valid sequencing library types:
 
 from __future__ import print_function
 import sys, subprocess, docopt, re, os, urllib2, time
-from pypette import shell, info, error
+from pypette import shell, info, error, shell_stdout
 
 class Sample: pass
 
-def cghub_query(query):
-	output = subprocess.check_output(
-		'python /data/csb/tools/cghub/bin/cgquery '
-		'"disease_abbr=%s&library_strategy=%s"' %
-		(query['cancer'], query['library_type']), shell=True)
-	
+def cghub_parse(output):
 	samples = []
 	sample = None
-	for line in output.split('\n'):
+	for line in output:
+		#sys.stdout.write(line)
 		if re.search('^\s+Analysis \d+', line):
 			sample = Sample()
 			sample.files = []
+			sample.filesizes = []
+			sample.ref_genome = ''
 			continue
 		
 		if re.search('^\s*$', line) and sample != None:
@@ -40,47 +41,37 @@ def cghub_query(query):
 			sample = None
 			continue
 		
-		m = re.search('^\s+filename\s+: (.*)', line)
-		if m:
-			sample.files.append((m.group(1), None))
-			continue
-		
-		m = re.search('^\s+filesize\s+: (.*)', line)
-		if m:
-			prev = sample.files[-1]
-			sample.files[-1] = (prev[0], int(m.group(1)))
-			continue
-		
-		m = re.search('^\s+center_name\s+: (.*)', line)
-		if m:
-			sample.center = m.group(1)
-			continue
-		
-		m = re.search('^\s+legacy_sample_id\s+: (.*)', line)
-		if m:
-			sample.legacy_sample_id = m.group(1)
-			continue
-		
-		m = re.search('^\s+analysis_data_uri\s+: (.*)', line)
-		if m:
-			sample.analysis_data_uri = m.group(1)
-			continue
-		
-		m = re.search('^\s+state\s+: (.*)', line)
-		if m:
-			sample.state = m.group(1)
-			continue
-	
+		m = re.search('^\s+(\w+)\s+: (.*)', line)
+		if not m: continue
+
+		if m.group(1) == 'filename':
+			sample.files.append(m.group(2))
+		elif m.group(1) == 'filesize':
+			sample.filesizes.append(int(m.group(2)))
+		elif m.group(1) == 'center_name':
+			sample.center = m.group(2)
+		elif m.group(1) == 'legacy_sample_id':
+			sample.legacy_sample_id = m.group(2)
+		elif m.group(1) == 'analysis_data_uri':
+			sample.analysis_data_uri = m.group(2)
+		elif m.group(1) == 'state':
+			sample.state = m.group(2)
+		elif m.group(1) == 'refassem_short_name':
+			sample.ref_genome = m.group(2)
+
 	return samples
 
 
 
 def cghub_list(samples):
 	for s in samples:
-		print('%s\t%s\t%s' % (s.files[0][0], s.legacy_sample_id, s.center))
-		#print('%s\t%s\t%s' % (s.files[0][0], s.files[0][1], s.center))
+		print('%s\t%s\t%s\t%s' % (s.files[0], s.legacy_sample_id,
+			s.ref_genome, s.center))
+		#print('%s\t%s\t%s' % (s.files[0], s.filesizes[0], s.center))
 
 	print('Found a total of %d samples.' % len(samples))
+	print('Total filesize: %.1f GB.' %
+		(sum(s.filesizes[0] for s in samples) / 1e9))
 
 
 	
@@ -94,8 +85,8 @@ def cghub_download(samples):
 				path = os.path.join(root, f)
 				existing[f] = os.stat(path).st_size
 		
-		filename = sample.files[0][0]
-		filesize = sample.files[0][1]
+		filename = sample.files[0]
+		filesize = sample.filesizes[0]
 
 		if filename in existing and existing[filename] == filesize:
 			info('%s has already been downloaded...' % filename)
@@ -105,7 +96,7 @@ def cghub_download(samples):
 		while not shell('/data/csb/tools/cghub/bin/gtdownload -v -d %s '
 			'-c /data/csb/tools/cghub/cghub_20131029.key' % 
 			sample.analysis_data_uri):
-			time.sleep(60)
+			time.sleep(60)     # Retry after 60 seconds
 			
 		
 
@@ -114,16 +105,26 @@ def cghub_download(samples):
 	
 if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
-	query = {}
-	query['cancer'] = args['<cancer>'].upper()
-	query['library_type'] = args['<library_type>']
-	
-	samples = cghub_query(query)
+	predicates = [
+		'disease_abbr=' + args['<cancer>'].upper(),
+		'library_strategy=' + args['<library_type>']
+	]
+	if args['--genome']:
+		predicates.append('refassem_short_name=' + args['--genome'])
+
+	output = shell_stdout('python /data/csb/tools/cghub/bin/cgquery "%s"' %
+		'&'.join(predicates))
+	samples = cghub_parse(output)
 
 	# Filter the samples if the user has provided a whitelist
 	if args['--filename']:
 		rx = args['--filename']
-		samples = [s for s in samples if re.search(rx, s.files[0][0])]
+		samples = [s for s in samples if re.search(rx, s.files[0])]
+
+	# Filter the samples if the user has provided a filename blacklist
+	if args['--filename-not-in']:
+		blacklist = [line.strip() for line in open(args['--filename-not-in'])]
+		samples = [s for s in samples if not s.files[0] in blacklist]
 	
 	if args['list']:
 		cghub_list(samples)

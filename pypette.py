@@ -1,5 +1,5 @@
 from __future__ import print_function
-import sys, re, datetime, pwd, os, subprocess, string, tempfile, random, gc
+import sys, re, datetime, pwd, os, subprocess, string, random, gc, itertools
 from collections import defaultdict
 
 
@@ -20,15 +20,6 @@ def error(message):
 #########################
 # FILESYSTEM MANAGEMENT #
 #########################
-
-def temp_dir(prefix):
-	tmp_path = '/data/tmp/%s/%s_%s_%x' % (
-		pwd.getpwuid(os.getuid()).pw_name, prefix,
-		datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S'),
-		random.randint(0, 2**32-1))
-	info('Temporary files stored in %s.' % tmp_path)
-	mkdir(tmp_path)
-	return tmp_path
 
 def mkdir(path):
 	try:
@@ -127,6 +118,9 @@ def natural_sorted(seq):
     alphanum_key = lambda key: [ int(c) if c.isdigit() else c.lower()
     	for c in re.split('([0-9]+)', key) ] 
     return sorted(seq, key = alphanum_key)
+
+def flatten(seq_of_seq):
+	return list(itertools.chain(*seq_of_seq))
 
 
 
