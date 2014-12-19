@@ -35,7 +35,7 @@ from pypette import zopen, shell, info, error, shell_stdout
 def read_sam(sam_path, mode='', min_quality=0):
 	view_options = ''
 	flag_on = 0x0
-	flag_off = 0x100      # Always discard secondary alignments
+	flag_off = 0x100 | 0x400   # Always discard secondary and duplicates
 	if 'a' in mode: flag_off |= 0x4                   # Aligned
 	if 'A' in mode: flag_on |= 0x1; flag_off |= 0xc   # Aligned read pairs
 	if 'u' in mode: flag_on |= 0x4                    # Unaligned
