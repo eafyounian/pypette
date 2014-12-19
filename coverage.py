@@ -124,7 +124,7 @@ def coverage_tiled(bam_path, window_size, quality, mode, step,
 			cov[start:stop+1] += 1
 
 	for chr in chr_cov:
-		print('fixedStep chrom=%s start=1 step=%d' % (chr, step))
+		print('fixedStep chrom=%s start=%d step=%d' % (chr, step, step))
 		for x in chr_cov[chr]: print(x)
 
 
