@@ -8,7 +8,6 @@ Usage:
   expression ensembl to hugo <expr_file> <gtf_file>
   expression normalize rpk <expr_file>
   expression normalize rpkm <expr_file>
-  expression normalize mor <expr_file>
   expression exon outliers <expr_file>
   expression visualize splicing <genes> <fastq_prefix> <out_prefix>
 
@@ -172,6 +171,55 @@ def normalize_rpkm(expr_path, bed_path):
 
 
 
+
+############################
+# EXPRESSION NORMALIZE MOR #
+############################
+
+def median(values):
+	mid = len(values) // 2
+	sorted_vals = sorted(values)
+	if len(values) % 2 == 0:
+		return (sorted_vals[mid-1] + sorted_vals[mid]) / 2
+	else:
+		return sorted_vals[mid]
+
+def normalize_mor(expr_path, threshold):
+	
+	# Read the gene expression data in.
+	data = np.genfromtxt(expr_path, names=True, dtype=None)
+	headers = list(data.dtype.names)
+	if headers[0:4] == ['CHROMOSOME', 'START', 'END', 'FEATURE']:
+		headers, samples = headers[0:4], headers[4:]
+	else:
+		headers, samples = headers[0:5], headers[5:]
+
+	F, S = len(data[0]), len(samples)
+	info = []
+	for f in range(F):
+		info.append('\t'.join(data[h][f] for h in range(len(headers))))
+
+	expr = np.zeros((F, S))
+	for s in range(S):
+		expr[:, s] = data[samples[s]]
+
+	ref = np.zeros(F)
+	for f in range(F):
+		ref[f] = median(expr[f, :])
+
+	valid = (ref > threshold & ref > 0)
+	for s in range(S):
+		ratio = median(expr[valid, s] / ref[valid])
+		expr[:, s] /= ratio
+	
+	print('%s\t%s' % ('\t'.join(headers), '\t'.join(samples)))
+	str_format = '\t%.2f' * S
+	for f in range(F):
+		sys.stdout.write(info[f])
+		print(str_format % tuple(expr[f, :].tolist()))
+
+
+
 	
 	
 	
@@ -324,7 +372,7 @@ if __name__ == '__main__':
 	elif args['normalize'] and args['rpkm']:
 		normalize_rpkm(args['<expression_file>'])
 	elif args['normalize'] and args['mor']:
-		normalize_mor(args['<expr_file>'])
+		normalize_mor(args['<expr_file>'], args['<threshold>'])
 	elif args['visualize'] and args['splicing']:
 		visualize_splicing(args['<genes>'], args['<fastq_prefix>'],
 			args['<out_prefix>'])
