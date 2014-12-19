@@ -87,7 +87,9 @@ def simple_pileup(bam_paths, genome_path, min_mapq=10, min_alt_alleles=3,
 	options = []
 	if region:
 		options.append('%s %s' % ('-l' if region.endswith('.bed') else '-r', region))
-		
+	
+	# samtools mpileup will automatically ignore alignments flagged as
+	# duplicates
 	return shell_stdout(
 		'samtools mpileup -sB %s -q0 -f %s %s 2> /dev/null | %s/spileup %d %d'
 		% (' '.join(options), genome_path, ' '.join(bam_paths),
@@ -139,6 +141,7 @@ def variant_call(bam_paths, genome_path, options):
 		region=options.region):
 
 		tokens = line[:-1].split('\t')
+		if len(tokens) < 3: info('Invalid spileup line:\n%s' % line)
 		if tokens[2] == 'N': continue
 		pileups = [p.split(' ') for p in tokens[3:]]
 
