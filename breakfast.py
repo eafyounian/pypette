@@ -528,25 +528,10 @@ def detect_specific(bam_path, donors_path, acceptors_path, genome_path,
 # BREAKFAST FILTER #
 ####################
 
-def sv_locus_identifiers(line, resolution=5000):
-	tokens = line.split('\t')
-	chrom_1 = tokens[0]
-	chrom_2 = tokens[5]
-	strand_1 = tokens[1]
-	strand_2 = tokens[6]
-	pos_1 = int(tokens[2])
-	pos_2 = int(tokens[7])
-
-	res = resolution
-	bins_1 = int(round(float(pos_1) / res))
-	bins_1 = [x*res for x in range(bins_1-1, bins_1+2)]
-	bins_2 = int(round(float(pos_2) / res))
-	bins_2 = [x*res for x in range(bins_2-1, bins_2+2)]
-
-	return ['%s:%d' % (chrom_1, x) for x in bins_1] + \
-		['%s:%d' % (chrom_2, x) for x in bins_2]
-
-
+def sv_locus_identifiers(chr, pos, resolution=5000):
+	bins = int(round(float(pos) / resolution))
+	bins = [x*resolution for x in range(bins-1, bins+2)]
+	return ['%s:%d' % (chr, x) for x in bins]
 
 def filter_variants(sv_path, min_reads, blacklist_path=None):
 	
@@ -557,21 +542,30 @@ def filter_variants(sv_path, min_reads, blacklist_path=None):
 	
 	blacklist = set()
 	if blacklist_path:
-		blacklist = set([x[:-1] for x in open(blacklist_path)])
+		blacklist = set([x.rstrip('\n') for x in open(blacklist_path)])
 	
 	sv_file = open(sv_path)
 	sys.stdout.write(next(sv_file))   # Header
 	for line in sv_file:
-		tokens = line[:-1].split('\t')
+		tokens = line.rstrip('\n').split('\t')
 		
 		valid = [int(tokens[10]) >= int(rule[0]) and
 			int(tokens[11]) >= int(rule[1]) and
 			int(tokens[10]) + int(tokens[11]) >= int(rule[2])
 			for rule in read_rules]
 		if not any(valid): continue
+
+		chrom = tokens[0]
+		pos = int(tokens[2])
+		loci_1 = set(sv_locus_identifiers(chrom, pos))
 		
-		loci = set(sv_locus_identifiers(line))
-		if loci.isdisjoint(blacklist):
+		chrom = tokens[5]
+		pos = int(tokens[7])
+		loci_2 = set(sv_locus_identifiers(chrom, pos))
+
+		# We discard a rearrangement if *both* endpoints are located
+		# in blacklisted regions.
+		if loci_1.isdisjoint(blacklist) or loci_2.isdisjoint(blacklist):
 			sys.stdout.write(line)
 		
 	sv_file.close()
@@ -649,7 +643,6 @@ def natural_sorted(l):
 
 
 def generate_blacklist(sv_files, min_frequency=0):
-	
 	S = len(sv_files)
 	
 	sample_variants = [[] for s in range(S)]
@@ -657,7 +650,13 @@ def generate_blacklist(sv_files, min_frequency=0):
 	for s, sv_file in enumerate(sv_files):
 		for line in zopen(sv_file):
 			if not line.startswith('chr'): continue
-			sample_variants[s] += sv_locus_identifiers(line)
+			tokens = line.rstrip('\n').split('\t')
+			chrom = tokens[0]
+			pos = int(tokens[2])
+			sample_variants[s] += sv_locus_identifiers(chrom, pos)
+			chrom = tokens[5]
+			pos = int(tokens[7])
+			sample_variants[s] += sv_locus_identifiers(chrom, pos)
 	
 	sample_variants = [set(loci) for loci in sample_variants]
 	
