@@ -1,6 +1,6 @@
 
 all:
-	mkdir bin
+	mkdir -p bin
 	ln -sf ../breakfast.py bin/breakfast
 	ln -sf ../fasta.py bin/fasta
 	ln -sf ../gtf.py bin/gtf
