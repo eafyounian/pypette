@@ -10,7 +10,7 @@ Usage:
   swiss xls2tsv <xls_file>
   swiss igv <tsv_file> <data_col>
   swiss download sra <sra_study>
-  swiss wig2bed <wig>
+  swiss wig2tsv <wig>
   swiss split wig [-H] <wig_file> <out_prefix>
   swiss ega checksum <tsv_file>
   swiss draw karyotype
@@ -27,7 +27,7 @@ import sys, docopt, re, os, xlrd, csv, itertools
 from collections import defaultdict
 from datetime import datetime
 from pypette import zopen, shell, read_fasta, revcomplement, GenomicFeatures
-from pypette import info, error, temp_dir, Object
+from pypette import info, error, Object
 
 
 
@@ -178,10 +178,18 @@ def swiss_download_sra(sra_study):
 	
 	
 #################
-# SWISS WIG2BED #
+# SWISS WIG2TSV #
 #################
 
-def swiss_wig2bed(wig_path):
+chromosomes = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
+	'11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
+	'21', '22', 'X', 'Y', 'M']
+chr_index = {}
+for idx, chr in enumerate(chromosomes):
+	chr_index[chr] = idx + 1
+	chr_index['chr'+chr] = idx + 1
+
+def swiss_wig2tsv(wig_path):
 	fixed_re = re.compile('fixedStep chrom=(\w+) start=(\d+) step=(\d+)')
 	chr = ''
 	pos = 0
@@ -189,13 +197,13 @@ def swiss_wig2bed(wig_path):
 	for line in zopen(wig_path):
 		m = fixed_re.match(line)
 		if m:
-			chr = m.group(1)
+			chr = chr_index[m.group(1)]
 			step = int(m.group(3))
-			pos = int(m.group(2)) - step
+			pos = int(m.group(2))
 			continue
-		
+		print('%d\t%d\t%f' % (chr, pos, float(line)))
 		pos += step
-		print('%s\t%d\t%d\t-\t%f' % (chr, pos, pos, float(line)))
+
 
 
 
@@ -447,8 +455,8 @@ if __name__ == '__main__':
 		swiss_swap(args['<file_1>'], args['<file_2>'])
 	elif args['xls2tsv']:
 		swiss_xls2tsv(args['<xls_file>'])
-	elif args['wig2bed']:
-		swiss_wig2bed(args['<wig>'])
+	elif args['wig2tsv']:
+		swiss_wig2tsv(args['<wig>'])
 	elif args['igv']:
 		swiss_igv(args['<tsv_file>'], int(args['<data_col>'])-1)
 	elif args['download'] and args['sra']:
