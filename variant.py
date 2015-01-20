@@ -16,14 +16,13 @@ Usage:
   variant discard 1000g <vcf_file>
   variant merge <vcf_files>...
   variant annotate <vcf_file>
-  variant rank <vcf_file>
   variant keep samples <vcf_file> <regex>
   variant discard samples <vcf_file> <regex>
   variant conservation <vcf_file>
   variant plot evidence <vcf_file>
   variant statistics <vcf_file>
   variant signature <vcf_file> <genome_fasta>
-  variant sort by frequency <vcf_file>
+  variant top variants <vcf_file>
   variant top mutated regions <vcf_file> <region_size>
   variant list alt samples <vcf_file>
   variant heterozygous bases <vcf_file> <pos_file>
@@ -221,8 +220,7 @@ def variant_recall(vcf_path, options):
 
 def variant_annotate(vcf_path):
 	format_annovar(vcf_path, 'anno_tmp.vcf')
-	shell('table_annovar.pl anno_tmp.vcf '
-		'/data/csb/tools/annovar-090513/humandb '
+	shell('table_annovar.pl anno_tmp.vcf ~/tools/annovar-090513/humandb '
 		'-buildver hg19 --remove --otherinfo --outfile annotated '
 		'-operation g,f,f,f '
 		'-protocol refGene,cosmic64,1000g2012feb_ALL,esp6500si_all')
@@ -538,34 +536,6 @@ def variant_merge(vcf_paths):
 
 
 
-################
-# VARIANT RANK #
-################
-
-def variant_rank(vcf_path):
-	vcf_file = zopen(vcf_path)
-	for line in vcf_file:
-		if not line.startswith('#'): break
-
-	headers = line[:-1].split('\t')
-	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
-
-	sys.stdout.write(line)
-
-	lines = []
-	for line in vcf_file:
-		cols = line.rstrip().split('\t')[sample_col:]
-		genotypes = [gt_symbols.index(gt[:gt.find(':')]) for gt in cols]
-		lines.append((sum(gt >= 2 for gt in genotypes), line))
-
-	lines.sort(key=lambda x: x[0], reverse=True)
-	for line in lines:
-		sys.stdout.write(line[1])
-
-
-
-
-
 ########################
 # VARIANT CONSERVATION #
 ########################
@@ -765,11 +735,11 @@ def variant_signature(vcf_path, genome_path):
 
 
 
-#############################
-# VARIANT SORT BY FREQUENCY #
-#############################
+################
+# TOP VARIANTS #
+################
 
-def sort_by_frequency(vcf_path):
+def top_variants(vcf_path):
 	vcf_file = zopen(vcf_path)
 	for line in vcf_file:
 		sys.stdout.write(line)
@@ -859,7 +829,7 @@ def variant_top_mutated_regions(vcf_path, region_size):
 	# Tally mutated samples in each region
 	print('Tallying mutated samples...')
 	for line in vcf_file:
-		cols = line[:-1].split('\t')
+		cols = line.rstrip('\n').split('\t')
 		pos = int(cols[1])
 		bin = (pos - 1) / step
 
@@ -877,13 +847,13 @@ def variant_top_mutated_regions(vcf_path, region_size):
 	# Convert mutation bitmasks into counts
 	print('Convert to counts...')
 	for chr in mutated:
-		mutated[chr] = np.sum(mutated[chr], axis=1)
+		mutated[chr] = mutated[chr].sum(axis=1)
 
 	# Print regions in descending order starting with highest recurrence
 	print('Find maximum...')
 	highest = 0
 	for chr in mutated:
-		highest = max(highest, np.amax(mutated[chr]))
+		highest = max(highest, max(mutated[chr]))
 
 	print('Top regions with two or more mutated sites:')
 	for n in range(highest, 1, -1):
@@ -1100,8 +1070,6 @@ if __name__ == '__main__':
 		variant_discard_by_position(args['<vcf_file>'], args['<pos_file>'])
 	elif args['merge']:
 		variant_merge(args['<vcf_files>'])
-	elif args['rank']:
-		variant_rank(args['<vcf_file>'])
 	elif args['keep'] and args['samples']:
 		variant_keep_samples(args['<vcf_file>'], args['<regex>'])
 	elif args['discard'] and args['samples']:
@@ -1114,8 +1082,8 @@ if __name__ == '__main__':
 		variant_signature(args['<vcf_file>'], args['<genome_fasta>'])
 	elif args['conservation']:
 		variant_conservation(args['<vcf_file>'])
-	elif args['sort'] and args['frequency']:
-		sort_by_frequency(args['<vcf_file>'])
+	elif args['top'] and args['variants']:
+		top_variants(args['<vcf_file>'])
 	elif args['top'] and args['mutated'] and args['regions']:
 		variant_top_mutated_regions(args['<vcf_file>'],
 			int(args['<region_size>']))
