@@ -9,7 +9,7 @@ Usage:
   fasta split <fasta> <tag_length> <anchors_5p_path> <anchors_3p_path>
   fasta split interleaved <fasta> <tag_length>
   fasta trim <fasta> <trim_length>
-  fasta find adapters <fasta> <seed>
+  fasta find adapters <reads_fasta> <reference_fasta>
   fasta remove adapters <fasta> <adapter>
   fasta color2nuc <fasta>
   fasta rna2dna <fasta>
@@ -158,11 +158,11 @@ def fasta_trim(fasta_path, trim_len):
 # FASTA FIND ADAPTERS #
 #######################
 
-def fasta_find_adapters(fasta_path, seed):
+def fasta_find_adapters(reads_path, reference_path):
 	suffixes = []
 	seed_len = len(seed)
 	
-	fasta = open(fasta_path)
+	fasta = open(reads_path)
 	for line in fasta:
 		if line[0] not in '>@': continue
 		seq = next(fasta)[:-1]
@@ -510,7 +510,7 @@ if __name__ == '__main__':
 	elif args['rna2dna']:
 		fasta_rna_to_dna(args['<fasta>'])
 	elif args['adapters'] and args['find']:
-		fasta_find_adapters(args['<fasta>'])
+		fasta_find_adapters(args['<reads_fasta>'], args['<reference_fasta>'])
 	elif args['remove'] and args['adapters']:
 		fasta_remove_adapters(args['<fasta>'], args['<adapter>'])
 	elif args['from'] and args['sra']:

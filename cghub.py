@@ -94,7 +94,7 @@ def cghub_download(samples):
 		
 		info('Downloading %s...' % filename)
 		while not shell('/data/csb/tools/cghub/bin/gtdownload -v -d %s '
-			'-c /data/csb/tools/cghub/cghub_20131029.key' % 
+			'-c /data/csb/tools/cghub/cghub_20141030.key' % 
 			sample.analysis_data_uri):
 			time.sleep(60)     # Retry after 60 seconds
 			
