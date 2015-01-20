@@ -14,6 +14,7 @@ Usage:
   fasta color2nuc <fasta>
   fasta rna2dna <fasta>
   fasta dna2rna <fasta>
+  fasta c2t <fasta>
   fasta check <fasta_1> <fasta_2> <out_fasta_1> <out_fasta_2>
   fasta repair <fasta_1> <fasta_2> <out_fasta_1> <out_fasta_2>
   fasta from sra <sra_file>
@@ -235,6 +236,30 @@ def fasta_rna_to_dna(fasta_path):
 		else:
 			sys.stdout.write(line.upper().replace('U', 'T'))
 	fasta.close()
+
+
+
+
+
+
+
+
+
+#############
+# FASTA C2T #
+#############
+
+def fasta_c2t(fasta_path):
+	fasta = zopen(fasta_path)
+	for line in fasta:
+		sys.stdout.write(line)
+		if line[0] in '>@':
+			line = next(fasta)    # Read sequence
+			sys.stdout.write(line.upper().replace('C', 'T'))
+
+	fasta.close()
+
+
 
 
 
@@ -509,6 +534,8 @@ if __name__ == '__main__':
 			args['<out_fasta_1>'], args['<out_fasta_2>'])
 	elif args['rna2dna']:
 		fasta_rna_to_dna(args['<fasta>'])
+	elif args['c2t']:
+		fasta_c2t(args['<fasta>'])
 	elif args['adapters'] and args['find']:
 		fasta_find_adapters(args['<reads_fasta>'], args['<reference_fasta>'])
 	elif args['remove'] and args['adapters']:
