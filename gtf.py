@@ -83,8 +83,9 @@ def gtf_to_transcript_bed(gtf_path):
 	tx_id_to_name = {}
 	tx_exons = {}
 	
-	gtf_file = open(gtf_path)
+	gtf_file = zopen(gtf_path)
 	for line in gtf_file:
+		if line.startswith('#'): continue
 		tokens = line.split('\t')
 		if not tokens[2] == 'exon': continue
 		if tokens[1] in ['nonsense_mediated_decay', 'retained_intron']: continue
