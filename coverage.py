@@ -147,7 +147,7 @@ def coverage_cds(bam_path, gtf_path):
 	coding = {}
 	for chr, size in chr_sizes.iteritems():
 		coding[chr] = np.zeros(size, np.bool_)
-	for line in open(gtf_path):
+	for line in zopen(gtf_path):
 		if line.startswith('#'): continue
 		cols = line.split('\t')
 		if cols[2] != 'CDS': continue
