@@ -148,6 +148,7 @@ def coverage_cds(bam_path, gtf_path):
 	for chr, size in chr_sizes.iteritems():
 		coding[chr] = np.zeros(size, np.bool_)
 	for line in open(gtf_path):
+		if line.startswith('#'): continue
 		cols = line.split('\t')
 		if cols[2] != 'CDS': continue
 		if len(cols[0]) > 5: continue   # Ignore chromosomes other than chrXX
