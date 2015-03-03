@@ -121,7 +121,7 @@ if __name__ == '__main__':
 
 	# Filter the samples if the user has provided a filename whitelist
 	if args['--filename-in']:
-		whitelist = [line.strip() for line in open(args['--filename-not-in'])]
+		whitelist = [line.strip() for line in open(args['--filename-in'])]
 		samples = [s for s in samples if s.files[0] in whitelist]
 
 	# Filter the samples if the user has provided a filename blacklist
