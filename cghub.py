@@ -10,6 +10,7 @@ Usage:
 Options:
   -h --help                Show this screen.
   --filename=REGEXP        Regular expression that filename must match.
+  --filename-in=PATH       List of filenames, everything else is excluded.
   --filename-not-in=PATH   List of filenames that must be excluded.
   --genome=VERSION         Only show data that matches the specified genome.
 
@@ -93,9 +94,7 @@ def cghub_download(samples):
 			continue
 		
 		info('Downloading %s...' % filename)
-		while not shell('/data/csb/tools/cghub/bin/gtdownload -v -d %s '
-			'-c /data/csb/tools/cghub/cghub_20141030.key' % 
-			sample.analysis_data_uri):
+		while not shell('gtdownload -v -d %s -c ~/tools/genetorrent*/cghub_20141030.key' % sample.analysis_data_uri):
 			time.sleep(60)     # Retry after 60 seconds
 			
 		
@@ -112,14 +111,18 @@ if __name__ == '__main__':
 	if args['--genome']:
 		predicates.append('refassem_short_name=' + args['--genome'])
 
-	output = shell_stdout('python /data/csb/tools/cghub/bin/cgquery "%s"' %
-		'&'.join(predicates))
+	output = shell_stdout('cgquery "%s"' % '&'.join(predicates))
 	samples = cghub_parse(output)
 
 	# Filter the samples if the user has provided a whitelist
 	if args['--filename']:
 		rx = args['--filename']
 		samples = [s for s in samples if re.search(rx, s.files[0])]
+
+	# Filter the samples if the user has provided a filename whitelist
+	if args['--filename-in']:
+		whitelist = [line.strip() for line in open(args['--filename-not-in'])]
+		samples = [s for s in samples if s.files[0] in whitelist]
 
 	# Filter the samples if the user has provided a filename blacklist
 	if args['--filename-not-in']:
