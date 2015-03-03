@@ -416,9 +416,13 @@ def sam_count(bam_paths, bed_path):
 	for s, bam_path in enumerate(bam_paths):
 		for r, line in enumerate(shell_stdout(command %
 			(bam_paths[s], bed_path))):
+			cols = line.rstrip('\n').split('\t')
+			if len(cols) == 5:
+				regions[r] = '\t'.join(cols[0:4])
+			else:
+				regions[r] = '\t'.join(cols[0:3]) + '\t'
 			last_tab = line.rfind('\t')
-			if s == 0: regions[r] = line[:last_tab]
-			count[r, s] = int(line[last_tab+1:-1])
+			count[r, s] = int(cols[-1])
 
 	print('CHROMOSOME\tSTART\tEND\tFEATURE\t%s' % '\t'.join(bam_paths))
 	for r, region in enumerate(regions):
