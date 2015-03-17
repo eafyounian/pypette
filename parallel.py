@@ -23,9 +23,9 @@ Options:
   -c --cpus=N          How many CPUs to allocate for each job [default: 1].
   -m --memory=N        How much memory (in gigabytes) to allocate per job
                        [default: 5].
-  -t --time=N          Time limit in hours for the full analysis [default: 168].
+  -t --time=N          Time limit in hours for the full analysis [default: 72].
   -J --job-name=NAME   Job name shown by SLURM [default: job].
-  -P --partition=NAME  SLURM partition on which to run jobs [default: local].
+  -P --partition=NAME  SLURM partition on which to run jobs [default: serial].
 
 Author: Matti Annala <matti.annala@tut.fi>
 
@@ -47,6 +47,14 @@ def parallel(command, job_name, max_parallel, cpus, memory, partition,
 	
 	if partition == 'local' and socket.gethostname() == 'merope.local':
 		error('ERROR: Running jobs on the Merope gateway is not allowed.')
+
+	# SLURM uses environment variables to know when "srun" is being run
+	# from inside a running job. By removing these environment variables,
+	# we force SLURM to create an independent new job.
+	if 'SLURM_JOB_ID' in os.environ:
+		for key in os.environ.keys():
+			if key.startswith('SLURM_'): del os.environ[key]
+		info('Hiding SLURM environment variables...')
 	
 	# Allow splitting the command string onto multiple lines.
 	command = command.replace('\n', '')

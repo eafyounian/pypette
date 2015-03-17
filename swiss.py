@@ -16,6 +16,7 @@ Usage:
   swiss draw karyotype
   swiss annotate <input_file> <bed_file>
   swiss count segments <min> <max> <seg_files>...
+  swiss seq2fa <seq_file>
 
 Options:
   -h --help             Show this screen.
@@ -201,7 +202,7 @@ def swiss_wig2tsv(wig_path):
 			step = int(m.group(3))
 			pos = int(m.group(2))
 			continue
-		print('%d\t%d\t%f' % (chr, pos, float(line)))
+		print('%d\t%d\t%s' % (chr, pos, float(line)))
 		pos += step
 
 
@@ -438,6 +439,19 @@ def swiss_count_segments(seg_paths, range):
 
 
 
+################
+# SWISS SEQ2FA #
+################
+
+def swiss_seq2fa(seq_path):
+	seq_file = zopen(seq_path)
+	for line_num, line in enumerate(seq_file):
+		print('>%d\n%s' % (line_num + 1, line.rstrip('\n')))
+
+
+
+
+
 
 
 
@@ -473,4 +487,7 @@ if __name__ == '__main__':
 	elif args['count'] and args['segments']:
 		swiss_count_segments(args['<seg_files>'],
 			(float(args['<min>']), float(args['<max>'])))
+	elif args['seq2fa']:
+		swiss_seq2fa(args['<seq_file>'])
+
 
