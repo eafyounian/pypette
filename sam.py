@@ -16,6 +16,7 @@ Usage:
   sam fragment lengths <bam_file>
   sam translate flags <flags>
   sam statistics <bam_files>...
+  sam mismatch frequency [-q N] <bam_files>...
 
 Options:
   -h --help             Show this screen.
@@ -510,12 +511,13 @@ def sam_flags(flags):
 
 def sam_statistics(bam_paths):
 	samples = [re.sub('\.bam$', '', s) for s in bam_paths]
-	print('SAMPLE\tTOTAL READS\tMAPPED\tCONCORDANTLY PAIRED\tMITOCHONDRIAL')
+	print('SAMPLE\tTOTAL READS\tALIGNED READS\tALIGNED READS WITH ALIGNED MATE\tALIGNED READS WITH CONCORDANT MATE\tMITOCHONDRIAL')
 
 	for bam_path in bam_paths:
 		total = -1
-		mapped = -1
-		concordantly_paired = -1
+		aligned = -1
+		aligned_with_aligned_mate = -1
+		aligned_with_concordant_mate = -1
 		mitochondrial = -1
 
 		for line in shell_stdout('samtools flagstat %s' % bam_path):
@@ -523,21 +525,54 @@ def sam_statistics(bam_paths):
 			if m: total = int(m.group(1)) + int(m.group(2))
 			
 			m = re.search(r'(\d+) \+ (\d+) mapped', line)
-			if m: mapped = int(m.group(1)) + int(m.group(2))
+			if m: aligned = int(m.group(1)) + int(m.group(2))
 
 			m = re.search(r'(\d+) \+ (\d+) properly paired', line)
-			if m: concordantly_paired = int(m.group(1)) + int(m.group(2))
+			if m: aligned_with_concordant_mate = \
+				int(m.group(1)) + int(m.group(2))
+
+			m = re.search(r'(\d+) \+ (\d+) with itself and mate mapped', line)
+			if m: aligned_with_aligned_mate = int(m.group(1)) + int(m.group(2))
 
 		# Count the number of reads aligned to mitochondrial DNA
 		for line in shell_stdout('samtools view -c %s chrM' % bam_path):
 			mitochondrial = int(line)
 			break
 
-		print('%s\t%d\t%d (%.1f%%)\t%d (%.1f%%)\t%d (%.1f%%)' % (
+		print('%s\t%d\t%d (%.1f%%)\t%d (%.1f%%)\t%d (%.1f%%)\t%d (%.1f%%)' % (
 			re.sub('\.bam$', '', bam_path), total,
-			mapped, float(mapped) / total * 100,
-			concordantly_paired, float(concordantly_paired) / total * 100,
+			aligned, float(aligned) / total * 100,
+			aligned_with_aligned_mate,
+			float(aligned_with_aligned_mate) / total * 100,
+			aligned_with_concordant_mate,
+			float(aligned_with_concordant_mate) / total * 100,
 			mitochondrial, float(mitochondrial) / total * 100)) 
+
+
+
+
+
+
+
+
+##########################
+# SAM MISMATCH FREQUENCY #
+##########################
+
+def sam_mismatch_frequency(bam_paths, min_mapq):
+	print('SAMPLE\tTOTAL\tMISMATCH\tFRACTION')
+	for bam_path in bam_paths:
+		total_mm = 0
+		total_nucs = 0
+		xm_col = 0
+		for al in read_sam(bam_path, 'a', min_quality=min_mapq):
+			if not al[xm_col].startswith('XM:i:'):
+				xm_col = [c.startswith('XM:i:') for c in al].index(True)
+			total_mm += int(al[xm_col][5:])
+			total_nucs += len(al[9])
+		print('%s\t%d\t%d\t%.3f%%' % (bam_path.replace('.bam', ''), total_nucs,
+			total_mm, float(total_mm) / total_nucs * 100))
+
 
 
 
@@ -583,4 +618,7 @@ if __name__ == '__main__':
 		sam_flags(args['<flags>'])
 	elif args['statistics']:
 		sam_statistics(args['<bam_files>'])
+	elif args['mismatch'] and args['frequency']:
+		sam_mismatch_frequency(args['<bam_files>'],
+			min_mapq=int(args['--quality']))
 
