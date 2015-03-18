@@ -153,7 +153,6 @@ def sam_reads_compact(bam_path, out_prefix):
 	for al in read_sam(bam_path):
 		flags = int(al[1])
 		if flags & 0x900: continue   # No secondary or supplementary alignments
-		if flags & 0x400: continue   # No PCR or optical duplicates
 		
 		if flags & 0x40:
 			rname = al[0][:-2] if al[0].endswith('/1') else al[0]
