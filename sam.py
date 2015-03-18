@@ -36,7 +36,7 @@ from pypette import zopen, shell, info, error, shell_stdout
 def read_sam(sam_path, mode='', min_quality=0):
 	view_options = ''
 	flag_on = 0x0
-	flag_off = 0x100 | 0x400   # Always discard secondary and duplicates
+	flag_off = 0x900       # Ignore secondary and supplementary alignments
 	if 'a' in mode: flag_off |= 0x4                   # Aligned
 	if 'A' in mode: flag_on |= 0x1; flag_off |= 0xc   # Aligned read pairs
 	if 'u' in mode: flag_on |= 0x4                    # Unaligned
@@ -44,6 +44,7 @@ def read_sam(sam_path, mode='', min_quality=0):
 	if '2' in mode: flag_on |= 0x80                   # Second mates
 	if '+' in mode: flag_off |= 0x10                  # Plus strand only
 	if '-' in mode: flag_on |= 0x10                   # Minus strand only
+	if not 'D' in mode: flag_off |= 0x400             # Flagged duplicates
 	
 	view_options += '-f 0x%x -F 0x%x ' % (flag_on, flag_off)
 	
@@ -77,7 +78,7 @@ def sam_reads(bam_path, out_prefix):
 	# Special case: If output prefix is not provided, output all reads to
 	# stdout as a single stream, discarding pair information.
 	if not out_prefix:
-		for al in read_sam(bam_path):
+		for al in read_sam(bam_path, 'D'):
 			sys.stdout.write('>%s\n%s\n' % (al[0], al[9]))
 		return
 
@@ -90,9 +91,7 @@ def sam_reads(bam_path, out_prefix):
 		
 	# FIXME: We assume that each read only has one alignment in the BAM file.
 	for al in read_sam(bam_path):
-		flags = int(al[1])
-		if flags & 0x900: continue   # No secondary or supplementary alignments
-		
+		flags = int(al[1])		
 		if flags & 0x40:
 			rname = al[0][:-2] if al[0].endswith('/1') else al[0]
 			mate = reads_2.pop(rname, None)
@@ -101,7 +100,6 @@ def sam_reads(bam_path, out_prefix):
 				fastq_2.write('@%s/2\n%s\n+\n%s\n' % (rname, mate[0], mate[1]))
 			else:
 				reads_1[rname] = (al[9], al[10])
-		
 		elif flags & 0x80:
 			rname = al[0][:-2] if al[0].endswith('/2') else al[0]
 			mate = reads_1.pop(rname, None)
@@ -109,13 +107,15 @@ def sam_reads(bam_path, out_prefix):
 				fastq_1.write('@%s/1\n%s\n+\n%s\n' % (rname, mate[0], mate[1]))
 				fastq_2.write('@%s/2\n%s\n+\n%s\n' % (rname, al[9], al[10]))
 			else:
-				reads_2[rname] = (al[9], al[10])
-				
+				reads_2[rname] = (al[9], al[10])	
 		else:
 			fastq.write('@%s\n%s\n+\n%s\n' % (al[0], al[9], al[10]))
 
 	info('Found %d orphan first mates.' % len(reads_1))
+	for read_id in reads_1.keys()[:5]: info('- Example: %s' % read_id)
+
 	info('Found %d orphan second mates.' % len(reads_2))
+	for read_id in reads_2.keys()[:5]: info('- Example: %s' % read_id)
 
 	if len(reads_1) > 0:
 		for rname, read in reads_1.iteritems():
@@ -150,10 +150,8 @@ def sam_reads_compact(bam_path, out_prefix):
 	reads_2 = {}
 		
 	# FIXME: We assume that each read only has one alignment in the BAM file.
-	for al in read_sam(bam_path):
-		flags = int(al[1])
-		if flags & 0x900: continue   # No secondary or supplementary alignments
-		
+	for al in read_sam(bam_path, 'D'):
+		flags = int(al[1])		
 		if flags & 0x40:
 			rname = al[0][:-2] if al[0].endswith('/1') else al[0]
 			mate = reads_2.pop(rname, None)
@@ -162,7 +160,6 @@ def sam_reads_compact(bam_path, out_prefix):
 				out_2.write('%s\n' % mate)
 			else:
 				reads_1[rname] = al[9]
-		
 		elif flags & 0x80:
 			rname = al[0][:-2] if al[0].endswith('/2') else al[0]
 			mate = reads_1.pop(rname, None)
@@ -171,12 +168,14 @@ def sam_reads_compact(bam_path, out_prefix):
 				out_2.write('%s\n' % al[9])
 			else:
 				reads_2[rname] = al[9]
-				
 		else:
 			out.write('%s\n' % al[9])
 
 	info('Found %d orphan first mates.' % len(reads_1))
+	for read_id in reads_1.keys()[:5]: info('- Example: %s' % read_id)
+
 	info('Found %d orphan second mates.' % len(reads_2))
+	for read_id in reads_2.keys()[:5]: info('- Example: %s' % read_id)
 
 	if len(reads_1) > 0:
 		for read in reads_1.itervalues(): out.write('%s\n' % read)
@@ -494,6 +493,8 @@ def sam_flags(flags):
 		print('- Did not pass quality controls')
 	if flags & 0x400:
 		print('- PCR or optical duplicate')
+	if flags & 0x800:
+		print('- Supplementary alignment')
 	
 
 
