@@ -86,6 +86,7 @@ int parse_pileup(char* bases, char* quality, AlleleList* alleles) {
 		} else if (bases[i+1] == '+' || bases[i+1] == '-') {
 			char* allele = 0;  // First char after number stored here.
 			int len = strtol(bases + i + 2, &allele, 10);
+			assert(len < MAX_ALLELE_LEN);
 			allele[-1] = bases[i+1]; allele[-2] = bases[i];
 			allele -= 2; len += 2;  // Include pre-base and sign
 			count_allele(allele, len, quality[j++], alleles);
@@ -114,8 +115,8 @@ int main(int argc, char** argv) {
 		return -1;
 	}
 	
-	int bufsize = 1024 * 1024;
-	char line[bufsize];
+	size_t line_buf_size = 1024 * 1024;
+	char* line = malloc(line_buf_size);
 	
 	int tabs[MAX_TABS_ON_LINE];    // Tab character locations
 	
@@ -123,7 +124,7 @@ int main(int argc, char** argv) {
 	
 	// Expected format is:
 	// CHROMOSOME, POSITION, REF, [READ_COUNT, READ_BASES, BASEQ, MAPQ]+
-	while (fgets(line, bufsize, stdin)) {
+	while (getline(&line, &line_buf_size, stdin)) {
 		// Find all tab characters.
 		int ntabs = 0;
 		for (int i = 0; line[i]; i++) {
