@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
 	
 	// Expected format is:
 	// CHROMOSOME, POSITION, REF, [READ_COUNT, READ_BASES, BASEQ, MAPQ]+
-	while (getline(&line, &line_buf_size, stdin)) {
+	while (getline(&line, &line_buf_size, stdin) != -1) {
 		// Find all tab characters.
 		int ntabs = 0;
 		for (int i = 0; line[i]; i++) {
