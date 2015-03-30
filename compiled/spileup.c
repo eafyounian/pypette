@@ -3,10 +3,15 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+
+#undef assert
+#define assert(cond) if (!(cond)) { fprintf(stderr, "Assert '%s' failed in %s, line %d.\n", #cond, __FILE__, __LINE__); exit(-1); } 
 
 #define MAX_ALLELE_LEN 32
 #define MAX_ALLELES 100
 #define MAX_SAMPLES 1000
+#define MAX_TABS_ON_LINE (5 + 4*MAX_SAMPLES)
 
 typedef struct {
 	char seq[MAX_ALLELE_LEN];
@@ -99,23 +104,31 @@ int main(int argc, char** argv) {
 
 	// Parse command line arguments.
 	int min_alt_reads = strtol(argv[1], NULL, 10);
+	if (errno == EINVAL) {
+		fprintf(stderr, "Invalid min_alt_reads argument.\n");
+		return -1;
+	}
 	min_mapq = strtol(argv[2], NULL, 10);
+	if (errno == EINVAL) {
+		fprintf(stderr, "Invalid min_mapq argument.\n");
+		return -1;
+	}
 	
 	int bufsize = 1024 * 1024;
 	char line[bufsize];
 	
-	int tabs[2*MAX_SAMPLES];    // Tab character locations
+	int tabs[MAX_TABS_ON_LINE];    // Tab character locations
 	
 	AlleleList sample_alleles[MAX_SAMPLES];
 	
 	// Expected format is:
-	// CHROMOSOME, POSITION, REF
+	// CHROMOSOME, POSITION, REF, [READ_COUNT, READ_BASES, BASEQ, MAPQ]+
 	while (fgets(line, bufsize, stdin)) {
-
 		// Find all tab characters.
 		int ntabs = 0;
 		for (int i = 0; line[i]; i++) {
 			if (line[i] == '\t') {
+				assert(ntabs < MAX_TABS_ON_LINE);
 				tabs[ntabs] = i;
 				if (ntabs >= 2) line[i] = '\0';
 				ntabs += 1;
@@ -125,9 +138,10 @@ int main(int argc, char** argv) {
 
 		int S = 0, i = 2;
 		while (i < ntabs) {
+			assert(S < MAX_SAMPLES);
 			sample_alleles[S].total = 0;
 			if (!isdigit(line[tabs[i]+1])) {
-				printf("Parse error at tab %d, char %c:\n%s\n", i,
+				fprintf(stderr, "Parse error at tab %d, char %c:\n%s\n", i,
 					line[tabs[i]+1], line);
 				return -1;
 			}
