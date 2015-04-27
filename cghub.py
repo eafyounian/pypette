@@ -94,8 +94,7 @@ def cghub_download(samples):
 			continue
 		
 		info('Downloading %s...' % filename)
-		while not shell('gtdownload -v -d %s -c ~/tools/genetorrent*/cghub_20141030.key' % sample.analysis_data_uri):
-			time.sleep(60)     # Retry after 60 seconds
+		shell('gtdownload -v -d %s -c ~/tools/genetorrent*/cghub_20141030.key' % sample.analysis_data_uri)
 			
 		
 
