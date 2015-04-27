@@ -10,7 +10,7 @@
 
 #define MAX_ALLELE_LEN 32
 #define MAX_ALLELES 100
-#define MAX_SAMPLES 1000
+#define MAX_SAMPLES 5000
 #define MAX_TABS_ON_LINE (5 + 4*MAX_SAMPLES)
 
 typedef struct {
@@ -64,9 +64,6 @@ void print_alleles(AlleleList* list) {
 }
 
 int parse_pileup(char* bases, char* quality, AlleleList* alleles) {
-	//printf("Bases: %s\n", bases);
-	//printf("Quality: %s\n", quality);
-	
 	// First we need to convert everything into lowercase.
 	for (int i = 0; bases[i]; i++) {
 		if (bases[i] == ',') {
@@ -86,10 +83,11 @@ int parse_pileup(char* bases, char* quality, AlleleList* alleles) {
 		} else if (bases[i+1] == '+' || bases[i+1] == '-') {
 			char* allele = 0;  // First char after number stored here.
 			int len = strtol(bases + i + 2, &allele, 10);
-			assert(len < MAX_ALLELE_LEN);
-			allele[-1] = bases[i+1]; allele[-2] = bases[i];
-			allele -= 2; len += 2;  // Include pre-base and sign
-			count_allele(allele, len, quality[j++], alleles);
+			if (len < MAX_ALLELE_LEN) {
+				allele[-1] = bases[i+1]; allele[-2] = bases[i];
+				allele -= 2; len += 2;  // Include pre-base and sign
+				count_allele(allele, len, quality[j++], alleles);
+			}
 			i += len;
 		} else {
 			count_allele(bases + i, 1, quality[j++], alleles);
