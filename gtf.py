@@ -78,7 +78,7 @@ def gtf_to_gene_bed(gtf_path):
 #########################
 
 def gtf_to_transcript_bed(gtf_path):
-	tx_id_to_name = {}
+	tx_id_to_gene = {}
 	tx_exons = {}
 	
 	gtf_file = zopen(gtf_path)
@@ -92,20 +92,19 @@ def gtf_to_transcript_bed(gtf_path):
 		chr, start, end, strand = c[0], int(c[3]), int(c[4]), c[6]
 		if not chr.startswith('chr'): chr = 'chr' + chr
 		
-		m = re.search(r'transcript_id "(.+?)"', line)
-		tx_id = m.group(1)
-		
-		m = re.search(r'gene_name "(.+?)"', line)
-		gene_name = m.group(1)
+		tx_id = re.search(r'transcript_id "(.+?)"', line).group(1)		
+		gene_id = re.search(r'gene_id "(.+?)"', line).group(1)
+		gene_name = re.search(r'gene_name "(.+?)"', line).group(1)
 		
 		exons = tx_exons.setdefault(tx_id, [])
 		exons.append((chr, strand, start, end))
-		tx_id_to_name[tx_id] = gene_name
+		tx_id_to_gene[tx_id] = (gene_id, gene_name)
 		
 	for tx_id, exons in tx_exons.iteritems():
 		start, end = min(ex[2] for ex in exons), max(ex[3] for ex in exons)
-		print('%s\t%d\t%d\t%s (%s)\t\t%s' % (exons[0][0], start - 1, end,
-			tx_id_to_name[tx_id], tx_id, exons[0][1]))
+		print('%s\t%d\t%d\t%s:%s:%s\t\t%s' % (exons[0][0], start - 1, end,
+			tx_id_to_gene[tx_id][0], tx_id_to_gene[tx_id][1], tx_id,
+			exons[0][1]))
 	
 
 
@@ -158,9 +157,10 @@ def gtf_to_composite_exon_bed(bed_path):
 
 		chr, start, end = c[0], int(c[3]), int(c[4])
 		if not chr.startswith('chr'): chr = 'chr' + chr
-		gene_id = re.search(r'gene_id "(.+?)"', line).group(1)
+		gene_id = '%s:%s' % (re.search(r'gene_id "(.+?)"', line).group(1),
+			re.search(r'gene_name "(.+?)"', line).group(1))
 		
-	 	gene = genes.setdefault(gene_id, [chr, [(start, end)]])
+	 	gene = genes.setdefault(gene_id, (chr, [(start, end)]))
 	 	if chr != gene[0]: error('Chromosome mismatch.')
 		
 	 	exons = gene[1]
