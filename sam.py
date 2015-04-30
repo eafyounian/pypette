@@ -12,7 +12,7 @@ Usage:
   sam read length <bam_file>
   sam pileup each <vcf_file> <bam_files>... [--quality=N]
   sam pileup <region> <bam_files>... [--quality=N]
-  sam count [-s M] <bed_file> <bam_files>...
+  sam count <bed_file> <bam_file>
   sam fragment lengths <bam_file>
   sam translate flags <flags>
   sam statistics <bam_files>...
@@ -388,44 +388,10 @@ def sam_pileup_each(vcf_path, bam_paths, min_al_quality=0):
 # SAM COUNT #
 #############
 
-def sam_count(bam_paths, bed_path):
-	import numpy as np
+def sam_count(bam_path, bed_path):
+	shell('cat %s | convert2bed -s -d -i bam | bedmap --count %s -' %
+		(bam_path, bed_path))
 
-	# bedtools gives cryptic error messages, so we try to help.
-	for bam_path in bam_paths:
-		if not os.path.exists(bam_path):
-			error('BAM file %s was not found.' % bam_path)
-
-	# Count lines in original BED file
-	bed_file = open(bed_path)
-	num_regions = 0
-	for line in bed_file:
-		if not line.startswith('#'): num_regions += 1
-
-	regions = [None] * num_regions
-	count = np.zeros((num_regions, len(bam_paths)), dtype=np.int32)
-
-	# bedtools multicov is faster if we have few regions. bedtools coverage
-	# is faster if we have many regions.
-	if num_regions < 1000:
-		command = 'bedtools multicov -split -bams %s -bed %s'
-	else:
-		command = 'bedtools coverage -split -counts -abam %s -b %s'
-
-	for s, bam_path in enumerate(bam_paths):
-		for r, line in enumerate(shell_stdout(command %
-			(bam_paths[s], bed_path))):
-			cols = line.rstrip('\n').split('\t')
-			if len(cols) == 5:
-				regions[r] = '\t'.join(cols[0:4])
-			else:
-				regions[r] = '\t'.join(cols[0:3]) + '\t'
-			last_tab = line.rfind('\t')
-			count[r, s] = int(cols[-1])
-
-	print('CHROMOSOME\tSTART\tEND\tFEATURE\t%s' % '\t'.join(bam_paths))
-	for r, region in enumerate(regions):
-		print('%s\t%s' % (region, '\t'.join(str(c) for c in count[r, :])))
 
 
 
@@ -611,7 +577,7 @@ if __name__ == '__main__':
 		sam_pileup(args['<region>'], args['<bam_files>'],
 			min_al_quality=int(args['--quality']))
 	elif args['count']:
-		sam_count(args['<bam_files>'], args['<bed_file>'])
+		sam_count(args['<bam_file>'], args['<bed_file>'])
 	elif args['fragment'] and args['lengths']:
 		sam_fragment_lengths(args['<bam_file>'])
 	elif args['flags']:
