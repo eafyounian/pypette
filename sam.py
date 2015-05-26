@@ -153,7 +153,7 @@ def sam_reads_raw(bam_path, out_prefix):
 	# FIXME: We assume that each read only has one alignment in the BAM file.
 	bam2fq = shell_stdout('samtools bam2fq %s' % bam_path)
 	for line in bam2fq:
-		if line[0] != '@': continue
+		if line[0] != '@': error('Invalid bam2fq output.')
 		line = line[:-1]
 		if line.endswith('/1'):
 			segname = line[1:-2]
@@ -172,7 +172,11 @@ def sam_reads_raw(bam_path, out_prefix):
 			else:
 				reads_2[segname] = next(bam2fq)[:-1]
 		else:
-			out.write('%s\n' % al[9])
+			out.write('%s\n' % next(bam2fq)[:-1])
+
+		# Skip per-base qualities. They can start with '@'.
+		next(bam2fq)
+		next(bam2fq)
 
 	info('Found %d orphan first mates.' % len(reads_1))
 	for read_id in reads_1.keys()[:5]: info('- Example: %s' % read_id)
