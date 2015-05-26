@@ -86,6 +86,7 @@ def fasta_to_raw(fasta_path):
 	for line in fasta:
 		if line[0] in ('>', '@'):
 			sys.stdout.write(next(fasta))
+		if line[0] == '+': next(fasta)	# Skip quality line (important)
 
 
 
