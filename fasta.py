@@ -6,6 +6,7 @@ Toolkit for the manipulation of FASTA and FASTQ sequence data.
 Usage:
   fasta filter <fasta> <regexp>
   fasta flatten <fasta> <out_dir>
+  fasta to raw <fasta>
   fasta split <fasta> <tag_length> <anchors_5p_path> <anchors_3p_path>
   fasta split interleaved <fasta> <tag_length>
   fasta trim <fasta> <trim_length>
@@ -69,6 +70,22 @@ def fasta_flatten(fasta_path, output_dir):
 			flat_file.write(line.strip())
 	flat_file.close()
 
+
+
+
+
+
+
+
+################
+# FASTA TO RAW #
+################
+
+def fasta_to_raw(fasta_path):
+	fasta = zopen(fasta_path)
+	for line in fasta:
+		if line[0] in ('>', '@'):
+			sys.stdout.write(next(fasta))
 
 
 
@@ -519,6 +536,8 @@ if __name__ == '__main__':
 		fasta_filter(args['<fasta>'], args['<regexp>'])
 	elif args['flatten']:
 		fasta_flatten(args['<fasta>'], args['<out_dir>'])
+	elif args['to'] and args['raw']:
+		fasta_to_raw(args['<fasta>'])
 	elif args['split'] and args['interleaved']:
 		fasta_split_interleaved(args['<fasta>'], int(args['<tag_length>']))
 	elif args['split']:
