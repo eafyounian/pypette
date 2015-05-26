@@ -4,8 +4,7 @@
 Tools for the manipulation of SAM and BAM files.
 
 Usage:
-  sam reads <bam_file> [<out_prefix>]
-  sam reads compact <bam_file> [<out_prefix>]
+  sam reads [-r] <bam_file> <out_prefix>
   sam unaligned reads <bam_file>
   sam discordant pairs [-q N] <bam_file> <min_distance_kb>
   sam extend fragments <bam_file> [--fragment-length=N]
@@ -13,6 +12,7 @@ Usage:
   sam pileup each <vcf_file> <bam_files>... [--quality=N]
   sam pileup <region> <bam_files>... [--quality=N]
   sam count <bed_file> <bam_file>
+  sam merge counts <bed_file> <count_files>...
   sam fragment lengths <bam_file>
   sam translate flags <flags>
   sam statistics <bam_files>...
@@ -20,6 +20,7 @@ Usage:
 
 Options:
   -h --help             Show this screen.
+  -r --raw              Output in raw sequence format.
   --fragment-length=N   Length to which single end reads will be extended
                         [default: 0].
   -p --parallel=N       Number of parallel processes to use [default: 8].
@@ -136,11 +137,11 @@ def sam_reads(bam_path, out_prefix):
 
 
 
-#####################
-# SAM READS COMPACT #
-#####################
+#################
+# SAM READS RAW #
+#################
 
-def sam_reads_compact(bam_path, out_prefix):
+def sam_reads_raw(bam_path, out_prefix):
 
 	out_1 = zopen('%s_1.reads.gz' % out_prefix, 'w')
 	out_2 = zopen('%s_2.reads.gz' % out_prefix, 'w')
@@ -150,24 +151,26 @@ def sam_reads_compact(bam_path, out_prefix):
 	reads_2 = {}
 		
 	# FIXME: We assume that each read only has one alignment in the BAM file.
-	for al in read_sam(bam_path, 'D'):
-		flags = int(al[1])		
-		if flags & 0x40:
-			rname = al[0][:-2] if al[0].endswith('/1') else al[0]
-			mate = reads_2.pop(rname, None)
+	bam2fq = shell_stdout('samtools bam2fq %s' % bam_path)
+	for line in bam2fq:
+		if line[0] != '@': continue
+		line = line[:-1]
+		if line.endswith('/1'):
+			segname = line[1:-2]
+			mate = reads_2.pop(segname, None)
 			if mate:
-				out_1.write('%s\n' % al[9])
+				out_1.write(next(bam2fq))
 				out_2.write('%s\n' % mate)
 			else:
-				reads_1[rname] = al[9]
-		elif flags & 0x80:
-			rname = al[0][:-2] if al[0].endswith('/2') else al[0]
-			mate = reads_1.pop(rname, None)
+				reads_1[segname] = next(bam2fq)[:-1]
+		elif line.endswith('/2'):
+			segname = line[1:-2]
+			mate = reads_1.pop(segname, None)
 			if mate:
 				out_1.write('%s\n' % mate)
-				out_2.write('%s\n' % al[9])
+				out_2.write(next(bam2fq))
 			else:
-				reads_2[rname] = al[9]
+				reads_2[segname] = next(bam2fq)[:-1]
 		else:
 			out.write('%s\n' % al[9])
 
@@ -318,7 +321,7 @@ def sam_pileup(region, bam_paths, min_al_quality=0):
 		
 		for bam in bam_paths:
 			line = subprocess.check_output(
-				'samtools mpileup -q%d -r %s:%d-%d %s' %
+				'samtools mpileup -A -B -q%d -r %s:%d-%d %s' %
 				(min_al_quality, chr, pos, pos, bam), shell=True,
 				stderr=dev_null)
 			sample_name = re.sub(r'(.*/)?(.*).bam', r'\2', bam)
@@ -397,7 +400,27 @@ def sam_count(bam_path, bed_path):
 
 
 
-	
+
+
+
+####################
+# SAM MERGE COUNTS #
+####################
+
+def sam_merge_counts(bed_path, count_paths):
+	samples = [p.replace('.tsv', '') for p in count_paths]
+	bed_file = open(bed_path)
+	cols = next(bed_file).rstrip('\n').split('\t')
+	header = ['CHROMOSOME', 'START', 'END', 'FEATURE']
+	while len(header) < len(cols): header.append('')
+	header += samples
+	print('\t'.join(header))
+	for line in shell_stdout('paste %s %s' % (bed_path,' '.join(count_paths))):
+		sys.stdout.write(line)
+
+
+
+
 
 
 	
@@ -555,8 +578,8 @@ if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
 	if args['unaligned'] and args['reads']:
 		sam_unaligned_reads(args['<bam_file>'])
-	elif args['reads'] and args['compact']:
-		sam_reads_compact(args['<bam_file>'], args['<out_prefix>'])
+	elif args['reads'] and args['--raw']:
+		sam_reads_raw(args['<bam_file>'], args['<out_prefix>'])
 	elif args['reads']:
 		sam_reads(args['<bam_file>'], args['<out_prefix>'])
 	elif args['discordant'] and args['pairs']:
@@ -578,6 +601,8 @@ if __name__ == '__main__':
 			min_al_quality=int(args['--quality']))
 	elif args['count']:
 		sam_count(args['<bam_file>'], args['<bed_file>'])
+	elif args['counts'] and args['merge']:
+		sam_merge_counts(args['<bed_file>'], args['<count_files>'])
 	elif args['fragment'] and args['lengths']:
 		sam_fragment_lengths(args['<bam_file>'])
 	elif args['flags']:
