@@ -41,10 +41,10 @@ Options:
 """
 
 from __future__ import print_function
-import sys, subprocess, docopt, re, os, string, math
+import sys, subprocess, docopt, re, os, string, math, itertools
 import numpy as np
 from collections import defaultdict
-from pypette import zopen, shell, shell_stdout, flatten
+from pypette import zopen, shell, shell_stdout, shell_stdinout
 from pypette import info, error, natural_sorted, revcomplement, read_fasta
 
 
@@ -231,10 +231,10 @@ def variant_annotate(vcf_path):
 	line = anno.next()
 	headers = ['CHROM', 'POSITION', 'REF', 'ALT', 'FUNCTION', 'NEARBY_GENES',
 		'EXONIC_FUNCTION', 'AA_CHANGE', 'COSMIC', '1000G', 'ESP6500']
-	headers += line[:-1].split('\t')[12:]
+	headers += line.rstrip('\n').split('\t')[12:]
 	out.write('\t'.join(headers) + '\n')
 	for line in anno:
-		tokens = line[:-1].split('\t')
+		tokens = line.rstrip('\n').split('\t')
 		out.write('\t'.join(tokens[0:2] + tokens[3:]))
 		out.write('\n')
 	out.close()
@@ -339,6 +339,7 @@ def somatic(vcf_path, sample_pairs):
 	# Convert sample pair names into index 2-tuples.
 	sample_pairs = [pair.split(',') for pair in sample_pairs]
 	if not all(len(pair) == 2 for pair in sample_pairs):
+		info([pair for pair in sample_pairs if len(pair) != 2])
 		error('Test and control samples must be in "test,control" format.')
 	for pair in sample_pairs:
 		if not pair[0] in samples:
@@ -462,70 +463,47 @@ def variant_discard_by_position(vcf_path, pos_path):
 #################
 
 def variant_merge(vcf_paths):
-	vcf_files = [zopen(p) for p in vcf_paths]
-	cons_headers = None
-	sample_names = []
-
-	# Check that headers are compatible
-	for vcf in vcf_files:
+	sort_in, sort_out = shell_stdinout('sort -k2,2 -k3,3n -k4,4 -k5,5')
+	cons_headers = []    # Consensus headers
+	vcf_samples = []     # Sample names of each VCF
+	for vcf_index, vcf_path in enumerate(vcf_paths):
+		info('Merging VCF file %s...' % vcf_path)
+		vcf = zopen(vcf_path)
 		for line in vcf:
 			if not line.startswith('#'): break
+		headers = line.rstrip('\n').split('\t')
+		gtype_col = (4 if not 'ESP6500' in headers else
+			headers.index('ESP6500') + 1)
+		if not cons_headers: cons_headers = headers[:gtype_col]
+		if cons_headers != headers[:gtype_col]: error('Header mismatch!')
+		vcf_samples.append(headers[gtype_col:])
+		for line in vcf:
+			sort_in.write('%d\t%s' % (vcf_index, line))
+	sort_in.close()
 
-		headers = line.rstrip().split('\t')
-		sample_col = headers.index(
-			'ESP6500' if 'ESP6500' in headers else 'ALT')+1
-		sample_names.append(headers[sample_col:])
+	print('\t'.join(cons_headers + sum(vcf_samples, [])))
+	vcf_sample_counts = [len(samples) for samples in vcf_samples]
+	S = sum(vcf_sample_counts)
+	vcf_sample_col = [sum(vcf_sample_counts[0:k])
+		for k in range(len(vcf_samples))]
 
-		if not cons_headers: cons_headers = headers[:sample_col]
-		if headers[:sample_col] != cons_headers:
-			error('Headers in VCF file %s do not match with headers in '
-				'earlier VCF files.' % vcf.name)
+	prev = None
+	calls = [':0:0'] * S
+	for line in sort_out:
+		cols = line.rstrip('\n').split('\t')
+		vcf_index = int(cols[0])
+		call_col = vcf_sample_col[vcf_index]
+		if prev != cols[1:5]:
+			if prev != None:
+				print('\t'.join(prev + calls))
+			prev = cols[1:5]
+			calls = [':0:0'] * S
+		calls[call_col:call_col+vcf_sample_counts[vcf_index]] = \
+			cols[gtype_col+1:]
 
-	chromosomes = (
-		'1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
-		'11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
-		'21', '22', 'X', 'Y', 'M', 'MT'
-	)
-	chr_index = { chr: i for i, chr in enumerate(chromosomes) }
+	print('\t'.join(prev + calls))    # Handle the last line
 
-	# Print the merged VCF header
-	print('\t'.join(cons_headers[:sample_col] + flatten(sample_names)))
 
-	# Merge the VCF files. We assume that the chromosomes are in natural order.
-	V = len(vcf_files)
-	variants = [None] * V
-	first = np.ones(V)
-	while True:
-		# Read next variant into memory from each VCF file
-		for v in np.nonzero(first)[0]:
-			var = next(vcf_files[v]).rstrip().split('\t')
-			var[0] = chr_index[var[0].replace('chr', '')]
-			var[1] = int(var[1])
-			variants[v] = var
-
-		# Find the first variant(s) by coordinate
-		first[:] = False
-		first[0] = True
-		first_var = variants[0]
-		for v in range(1, V):
-			if variants[v][:4] == first_var[:4]:
-				first[v] = True
-			elif variants[v][:4] < first_var[:4]:
-				first[:] = False
-				first[v] = True
-				first_var = variants[v]
-
-		# Print the variant, fill with empty columns if variant is missing from
-		# some VCF file(s).
-		columns = first_var[2:sample_col]
-		for v in range(V):
-			if first[v]:
-				columns += variants[v][sample_col:]
-			else:
-				columns += [':0:0'] * len(sample_names[v])
-
-		print('chr%s\t%d\t%s' % (chromosomes[first_var[0]], first_var[1],
-			'\t'.join(columns)))
 
 
 
@@ -778,7 +756,7 @@ def list_alt_samples(vcf_path):
 	samples = headers[sample_col:]
 	
 	for line in vcf_file:
-		cols = line[:-1].split('\t')
+		cols = line.rstrip('\n').split('\t')
 		gtypes = [gt.split(':')[0] for gt in cols[sample_col:]]
 		sys.stdout.write('\t'.join(cols[:sample_col]))
 		for s, gt in enumerate(gtypes):
@@ -803,14 +781,14 @@ def variant_top_mutated_regions(vcf_path, region_size):
 	for line in vcf_file:
 		if not line.startswith('#'): break
 
-	headers = line.rstrip().split('\t')
+	headers = line.rstrip('\n').split('\t')
 	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
 	samples = headers[sample_col:]
 
 	# Construct chromosome map
 	chr_sizes = defaultdict(int)
 	for line in vcf_file:
-		cols = line[:-1].split('\t')
+		cols = line.rstrip('\n').split('\t')
 		chr_sizes[cols[0]] = max(chr_sizes[cols[0]], int(cols[1]))
 	vcf_file.close()
 
@@ -864,6 +842,9 @@ def variant_top_mutated_regions(vcf_path, region_size):
 				if mut[bin] != n or vpos[bin] != -1: continue
 				print('%s:%d-%d\t%d samples' % (
 					chr, bin*step+1, bin*step+region_size, n))
+
+
+
 
 
 
