@@ -39,7 +39,7 @@ from pypette import info, error, Object
 def swiss_rename(tsv_path):
 	
 	for line in open(tsv_path, 'U'):
-		line = line.replace('\n', '')
+		line = line.rstrip('\n')
 		tokens = line.split('\t')
 		if len(tokens) != 2: continue
 			
@@ -57,9 +57,9 @@ def swiss_rename(tsv_path):
 
 
 
-################
+##############
 # SWISS LINK #
-################
+##############
 
 def swiss_link(tsv_path):
 	for line in open(tsv_path, 'U'):
