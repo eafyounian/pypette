@@ -71,9 +71,6 @@ def shell(command, **kwargs):
 		print('Process returned with error %d.' % e.returncode)
 		return False
 	return True
-	
-def shell_nowait(command):
-	return subprocess.Popen(command, shell=True, executable='/bin/bash')
 
 def shell_stdin(command):
 	return subprocess.Popen(command, stdin=subprocess.PIPE, shell=True,
@@ -82,6 +79,12 @@ def shell_stdin(command):
 def shell_stdout(command):
 	return subprocess.Popen(command, stdout=subprocess.PIPE, shell=True,
 		executable='/bin/bash', bufsize=-1).stdout
+
+def shell_stdinout(command):
+	p = subprocess.Popen(command, stdin=subprocess.PIPE,
+		stdout=subprocess.PIPE, shell=True, executable='/bin/bash',
+		bufsize=-1)
+	return (p.stdin, p.stdout)
 
 def daemonize(close_outputs=False):
 	if os.fork() > 0: os._exit(0)      # Parent has PID > 0
