@@ -487,6 +487,11 @@ def variant_merge(vcf_paths):
 	vcf_sample_col = [sum(vcf_sample_counts[0:k])
 		for k in range(len(vcf_samples))]
 
+	info('Merged VCF will contain:')
+	info('- %d header columns' % len(cons_headers))
+	for samples, path in zip(vcf_samples, vcf_paths):
+		info('- %d columns from %s' % (len(samples), path))
+
 	prev = None
 	calls = [':0:0'] * S
 	for line in sort_out:
@@ -496,7 +501,7 @@ def variant_merge(vcf_paths):
 		if prev != cols[1:5]:
 			if prev != None:
 				print('\t'.join(prev + calls))
-			prev = cols[1:5]
+			prev = cols[1:gtype_col+1]
 			calls = [':0:0'] * S
 		calls[call_col:call_col+vcf_sample_counts[vcf_index]] = \
 			cols[gtype_col+1:]
