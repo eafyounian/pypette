@@ -6,6 +6,7 @@ Tools for the manipulation of SAM and BAM files.
 Usage:
   sam reads [-r] <bam_file> <out_prefix>
   sam unaligned reads <bam_file>
+  sam compact <bam_file>
   sam discordant pairs [-q N] <bam_file> <min_distance_kb>
   sam extend fragments <bam_file> [--fragment-length=N]
   sam read length <bam_file>
@@ -217,6 +218,33 @@ def sam_unaligned_reads(bam_path):
 
 
 
+
+###############
+# SAM COMPACT #
+###############
+
+def sam_compact(bam_path):
+	shell('samtools view -H %s' % bam_path)
+	short_id = {}
+	id_counter = 1
+	for al in read_sam(bam_path, 'D'):
+		rid = al[0]
+		if rid[-2] == '/': rid = rid[:-2]
+		new_id = short_id.get(rid)
+		if new_id:
+			del short_id[rid]
+		else:
+			new_id = str(id_counter)
+			id_counter += 1
+			short_id[rid] = new_id
+		al[0] = new_id
+		al[10] = '*'
+		sys.stdout.write('\t'.join(al))
+
+
+
+
+
 ########################
 # SAM DISCORDANT PAIRS #
 ########################
@@ -395,9 +423,10 @@ def sam_pileup_each(vcf_path, bam_paths, min_al_quality=0):
 # SAM COUNT #
 #############
 
-def sam_count(bam_path, bed_path):
-	shell('cat %s | convert2bed -s -d -i bam | bedmap --count %s -' %
-		(bam_path, bed_path))
+def sam_count(bam_path, bed_path,
+	genome_path='~/organisms/homo_sapiens/hg19.chrom.sizes'):
+	shell('bedtools coverage -split -sorted -counts -g %s -a %s -b %s | cut -f4' %
+		(genome_path, bed_path, bam_path))
 
 
 
@@ -415,7 +444,8 @@ def sam_merge_counts(bed_path, count_paths):
 	samples = [p.replace('.tsv', '') for p in count_paths]
 	bed_file = open(bed_path)
 	cols = next(bed_file).rstrip('\n').split('\t')
-	header = ['CHROMOSOME', 'START', 'END', 'FEATURE']
+	header = ['CHROMOSOME', 'START', 'END']
+	if len(cols) >= 4: header.append('FEATURE')
 	while len(header) < len(cols): header.append('')
 	header += samples
 	print('\t'.join(header))
@@ -586,6 +616,8 @@ if __name__ == '__main__':
 		sam_reads_raw(args['<bam_file>'], args['<out_prefix>'])
 	elif args['reads']:
 		sam_reads(args['<bam_file>'], args['<out_prefix>'])
+	elif args['compact']:
+		sam_compact(args['<bam_file>'])
 	elif args['discordant'] and args['pairs']:
 		sam_discordant_pairs(args['<bam_file>'],
 			int(args['<min_distance_kb>']) * 1000,
