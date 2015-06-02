@@ -8,7 +8,7 @@ Usage:
   gtf to gene bed <gtf_file>
   gtf to transcript bed <gtf_file>
   gtf to exon bed <gtf_file>
-  gtf to composite exon bed <gtf_file>
+  gtf to composite bed <gtf_file>
 
 Options:
   -h --help         Show this screen.
@@ -140,11 +140,11 @@ def gtf_to_exon_bed(gtf_path):
 
 
 
-#############################
-# GTF TO COMPOSITE EXON BED #
-#############################
+########################
+# GTF TO COMPOSITE BED #
+########################
 
-def gtf_to_composite_exon_bed(bed_path):
+def gtf_to_composite_bed(bed_path):
 	genes = {}
 	
 	bed_file = zopen(bed_path)
@@ -160,7 +160,7 @@ def gtf_to_composite_exon_bed(bed_path):
 		gene_id = '%s:%s' % (re.search(r'gene_id "(.+?)"', line).group(1),
 			re.search(r'gene_name "(.+?)"', line).group(1))
 		
-	 	gene = genes.setdefault(gene_id, (chr, [(start, end)]))
+	 	gene = genes.setdefault(gene_id, [chr, [(start, end)]])
 	 	if chr != gene[0]: error('Chromosome mismatch.')
 		
 	 	exons = gene[1]
@@ -169,7 +169,7 @@ def gtf_to_composite_exon_bed(bed_path):
 	 	disjoint.append((min([start] + [ex[0] for ex in overlapping]),
 	 		max([end] + [ex[1] for ex in overlapping])))
 	 	gene[1] = disjoint
-		
+
 	for gene_id, gene in genes.iteritems():
 	 	exons = gene[1]
 	 	for ex in exons:
@@ -206,8 +206,8 @@ if __name__ == '__main__':
 		gtf_to_gene_bed(args['<gtf_file>'])
 	elif args['to'] and args['transcript'] and args['bed']:
 		gtf_to_transcript_bed(args['<gtf_file>'])
-	elif args['to'] and args['composite'] and args['exon'] and args['bed']:
-		gtf_to_composite_exon_bed(args['<gtf_file>'])
+	elif args['to'] and args['composite'] and args['bed']:
+		gtf_to_composite_bed(args['<gtf_file>'])
 	elif args['to'] and args['exon'] and args['bed']:
 		gtf_to_exon_bed(args['<gtf_file>'])
 	elif args['cleanup'] and args['ensembl']:
