@@ -42,7 +42,7 @@ Options:
 
 from __future__ import print_function
 import sys, subprocess, docopt, re, os, string, math, itertools
-import numpy as np
+#import numpy as np
 from collections import defaultdict
 from pypette import zopen, shell, shell_stdout, shell_stdinout
 from pypette import info, error, natural_sorted, revcomplement, read_fasta
@@ -89,22 +89,34 @@ def simple_pileup(bam_paths, genome_path, min_mapq=10, min_alt_alleles=3,
 	
 	# samtools mpileup will automatically ignore alignments flagged as
 	# duplicates
-	cmd = 'samtools mpileup -A -sB %s -q0 -f %s %s 2> /dev/null | %s/spileup %d %d' % (' '.join(options), genome_path,
+	cmd = 'samtools mpileup -A -sB %s -q0 -f %s %s | %s/spileup %d %d' % (' '.join(options), genome_path,
 		' '.join(bam_paths), helper_dir, min_alt_alleles, min_mapq)
-	info('Pre-filtering mutations with the following command:\n%s' % cmd)
+	#info('Pre-filtering mutations with the following command:\n%s' % cmd)
 	return shell_stdout(cmd)
 
 
-def call_genotypes(reads, total_reads, options):
+def call_genotypes(alt, total, options):
 	# 0 = unknown, 1 = ref, 2 = hetz, 3 = homz
-	ref = (total_reads - reads >= options.min_ref_reads) & \
-		((total_reads - reads) / total_reads >= options.min_ref_ratio)
-	hetz = (reads >= options.min_hetz_reads) & \
-		(reads / total_reads >= options.min_hetz_ratio)
-	homz = (reads >= options.min_homz_reads) & \
-		(reads / total_reads >= options.min_homz_ratio)
+	gtypes = [0] * len(alt)
+	for s in range(len(alt)):
+		if total[s] == 0: continue
+		if total[s] - alt[s] >= options.min_ref_reads and \
+			(total[s] - alt[s]) / total[s] >= options.min_ref_ratio:
+			gtypes[s] = 1
+		ratio = alt[s] / total[s]
+		if alt[s] >= options.min_hetz_reads and ratio >=options.min_hetz_ratio:
+			gtypes[s] = 2
+		if alt[s] >= options.min_homz_reads and ratio >=options.min_homz_ratio:
+			gtypes[s] = 3
+	return gtypes
 
-	return ref + 2*hetz + homz
+	#ref = (total_reads - reads >= options.min_ref_reads) & \
+	#	((total_reads - reads) / total_reads >= options.min_ref_ratio)
+	#hetz = (reads >= options.min_hetz_reads) & \
+	#	(reads / total_reads >= options.min_hetz_ratio)
+	#homz = (reads >= options.min_homz_reads) & (ratio >= options.min_homz_ratio)
+
+	#return ref + 2*hetz + homz
 
 
 
@@ -144,8 +156,11 @@ def variant_call(bam_paths, genome_path, options):
 		if tokens[2] == 'N': continue
 		pileups = [p.split(' ') for p in tokens[3:]]
 
-		total_reads = np.zeros(len(samples))
-		allele_reads = defaultdict(lambda: np.zeros(len(samples)))
+		#total_reads = np.zeros(len(samples))
+		#allele_reads = defaultdict(lambda: np.zeros(len(samples)))
+
+		total_reads = [0] * len(samples)
+		allele_reads = defaultdict(lambda: [0] * len(samples))
 
 		for s, pileup in enumerate(pileups):
 			if len(pileup) < 3: continue
@@ -158,7 +173,7 @@ def variant_call(bam_paths, genome_path, options):
 		# Call genotypes for each allele.
 		for alt, reads in allele_reads.iteritems():
 			genotypes = call_genotypes(reads, total_reads, options)
-			if not options.keep_all and all(genotypes < 2): continue
+			if not options.keep_all and all(gt < 2 for gt in genotypes): continue
 			
 			gtypes = ('%s:%d:%d' % (gt_symbols[g], reads[s], total_reads[s])
 				for s, g in enumerate(genotypes))
@@ -194,10 +209,10 @@ def variant_recall(vcf_path, options):
 	samples = headers[sample_col:]
 	
 	for line in vcf_file:
-		cols = line.rstrip().split('\t')
+		cols = line.rstrip('\n').split('\t')
 		gt_reads = [gt.split(':')[1:] for gt in cols[sample_col:]]
-		reads = np.array([float(gt[0]) for gt in gt_reads])
-		total_reads = np.array([float(gt[1]) for gt in gt_reads])
+		reads = [int(gt[0]) for gt in gt_reads]
+		total_reads = [int(gt[1]) for gt in gt_reads]
 		
 		genotypes = call_genotypes(reads, total_reads, options)
 		if all(genotypes < 2): continue
