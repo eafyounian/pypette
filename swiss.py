@@ -196,13 +196,13 @@ def swiss_wig2tsv(wig_path):
 	pos = 0
 	step = 0
 	for line in zopen(wig_path):
-		m = fixed_re.match(line)
-		if m:
+		if line.startswith('fixed'):
+			m = fixed_re.match(line)
 			chr = chr_index[m.group(1)]
 			step = int(m.group(3))
 			pos = int(m.group(2))
 			continue
-		print('%d\t%d\t%s' % (chr, pos, float(line)))
+		sys.stdout.write('%d\t%d\t%s' % (chr, pos, line))
 		pos += step
 
 
