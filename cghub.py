@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/bin/env pypy
 
 """
 Download sequencing data from the Cancer Genomics Hub.
@@ -13,6 +13,7 @@ Options:
   --filename-in=PATH       List of filenames, everything else is excluded.
   --filename-not-in=PATH   List of filenames that must be excluded.
   --genome=VERSION         Only show data that matches the specified genome.
+  --most-recent            Only download the most recent versions of BAM files.
 
 Valid sequencing library types:
   WGS, WXS, RNA-Seq, ChIP-Seq, MeDIP-Seq, Bisulfite-Seq
@@ -20,9 +21,13 @@ Valid sequencing library types:
 
 from __future__ import print_function
 import sys, subprocess, docopt, re, os, urllib2, time
-from pypette import shell, info, error, shell_stdout
+from pypette import shell, info, error, shell_stdout, Object
 
-class Sample: pass
+def identify_sample_type(sample):
+	if any(f.endswith('.bam') for f in sample.files):
+		return 'BAM'
+	else:
+		return 'Unknown'
 
 def cghub_parse(output):
 	samples = []
@@ -30,14 +35,15 @@ def cghub_parse(output):
 	for line in output:
 		#sys.stdout.write(line)
 		if re.search('^\s+Analysis \d+', line):
-			sample = Sample()
+			sample = Object()
 			sample.files = []
 			sample.filesizes = []
 			sample.ref_genome = ''
 			continue
 		
-		if re.search('^\s*$', line) and sample != None:
-			if sample.state == 'live': 
+		if line.strip() == '' and sample != None:
+			if sample.state == 'live':
+				sample.type = identify_sample_type(sample)
 				samples.append(sample)
 			sample = None
 			continue
@@ -49,6 +55,10 @@ def cghub_parse(output):
 			sample.files.append(m.group(2))
 		elif m.group(1) == 'filesize':
 			sample.filesizes.append(int(m.group(2)))
+		elif m.group(1) == 'upload_date':
+			sample.upload_date = m.group(2)
+		elif m.group(1) == 'aliquot_id':
+			sample.aliquot = m.group(2)
 		elif m.group(1) == 'center_name':
 			sample.center = m.group(2)
 		elif m.group(1) == 'legacy_sample_id':
@@ -70,8 +80,8 @@ def cghub_list(samples):
 			s.ref_genome, s.center))
 		#print('%s\t%s\t%s' % (s.files[0], s.filesizes[0], s.center))
 
-	print('Found a total of %d samples.' % len(samples))
-	print('Total filesize: %.1f GB.' %
+	info('Found a total of %d samples.' % len(samples))
+	info('Total filesize: %.1f GB.' %
 		(sum(s.filesizes[0] for s in samples) / 1e9))
 
 
@@ -128,6 +138,17 @@ if __name__ == '__main__':
 		blacklist = [line.strip() for line in open(args['--filename-not-in'])]
 		samples = [s for s in samples if not s.files[0] in blacklist]
 	
+	# Only keep the most recent versions of BAM files
+	if args['--most-recent']:
+		aliquots = {}
+		for s in samples:
+			if s.type != 'BAM': continue
+			aliquots.setdefault(s.aliquot, []).append(s)
+		for asamples in aliquots.itervalues():
+			if len(asamples) == 1: continue
+			samples_by_date = sorted(asamples, key=lambda s: s.upload_date)
+			for s in samples_by_date[:-1]: samples.remove(s)
+
 	if args['list']:
 		cghub_list(samples)
 	elif args['download']:
