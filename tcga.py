@@ -6,6 +6,7 @@ Collection of software tools for the analysis of Cancer Genome Atlas datasets.
 Usage:
   tcga tumor normal pairs <samples_file>
   tcga partition <samples_file> <num_partitions>
+  tcga samples by patient <samples_file>
 
 Options:
   -h --help      Show this screen.
@@ -76,6 +77,28 @@ def partition(samples_path, num_partitions):
 
 
 
+
+def samples_by_patient(samples_path):
+	samples = [line.strip() for line in zopen(samples_path)]
+	patients = {}
+	num_without_pid = 0
+	for s in samples:
+		m = re.search('TCGA-..-....', s)
+		if not m:
+			num_without_pid += 1
+			continue
+		psamples = patients.setdefault(m.group(0), [])
+		psamples.append(s)
+
+	if num_without_pid:
+		info('WARNING: %d sample names did not contain a TCGA patient ID.' % num_without_pid)
+
+	for patient, psamples in patients.iteritems():
+		print('Patient %s (%d samples):' % (patient, len(psamples)))
+		for sample in psamples: print('- %s' % sample)
+
+
+
 		
 	
 	
@@ -85,5 +108,7 @@ if __name__ == '__main__':
 		tumor_normal_pairs(args['<samples_file>'])
 	elif args['partition']:
 		partition(args['<samples_file>'], int(args['<num_partitions>']))
+	elif args['samples'] and args['by'] and args['patient']:
+		samples_by_patient(args['<samples_file>'])
 
 
