@@ -87,9 +87,10 @@ def shell_stdinout(command):
 	return (p.stdin, p.stdout)
 
 def daemonize(close_outputs=False):
-	if os.fork() > 0: os._exit(0)      # Parent has PID > 0
-	os.setsid()
-	if os.fork() > 0: os._exit(0)      # Parent has PID > 0
+	pid = os.fork()
+	if pid < 0: error('Fork error in daemonize().')
+	if pid > 0: sys.exit(0)     # Parent has PID > 0
+	os.setsid()                 # Stop listening to signals for parent process
 	for fd in range(0, 3 if close_outputs else 1):
 		try: os.close(fd)
 		except: pass
