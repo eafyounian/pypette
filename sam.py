@@ -57,6 +57,14 @@ def read_sam(sam_path, mode='', min_quality=0):
 		yield line.split('\t')
 
 
+# This check is used in conjunction with samtools bam2fq, because some BAM
+# files include mate suffixes in read IDs and some do not. This affects the
+# use of the "-n" flag of samtools bam2fq.
+def has_mate_suffixes(sam_path):
+	first_ids = []
+	for al in read_sam(sam_path):
+		if len(first_ids) < 10: first_ids.append(al[0])
+	return all(id.endswith('/1') or id.endswith('/2') for id in first_ids)
 
 
 def ref_sequence_sizes(sam_path):
@@ -76,14 +84,6 @@ def ref_sequence_sizes(sam_path):
 #############
 
 def sam_reads(bam_path, out_prefix):
-	
-	# Special case: If output prefix is not provided, output all reads to
-	# stdout as a single stream, discarding pair information.
-	if not out_prefix:
-		for al in read_sam(bam_path, 'D'):
-			sys.stdout.write('>%s\n%s\n' % (al[0], al[9]))
-		return
-
 	fastq_1 = zopen('%s_1.fq.gz' % out_prefix, 'w')
 	fastq_2 = zopen('%s_2.fq.gz' % out_prefix, 'w')
 	fastq = zopen('%s.fq.gz' % out_prefix, 'w')
@@ -143,16 +143,17 @@ def sam_reads(bam_path, out_prefix):
 #################
 
 def sam_reads_raw(bam_path, out_prefix):
-
 	out_1 = zopen('%s_1.reads.gz' % out_prefix, 'w')
 	out_2 = zopen('%s_2.reads.gz' % out_prefix, 'w')
 	out = zopen('%s.reads.gz' % out_prefix, 'w')
 	
 	reads_1 = {}
 	reads_2 = {}
-		
-	# FIXME: We assume that each read only has one alignment in the BAM file.
-	bam2fq = shell_stdout('samtools bam2fq %s' % bam_path)
+
+	# The "samtools bam2fq" command does not output supplementary or
+	# secondary alignments. Each read only has one primary alignment.
+	options = '-n' if has_mate_suffixes(bam_path) else ''
+	bam2fq = shell_stdout('samtools bam2fq %s %s' % (options, bam_path))
 	for line in bam2fq:
 		if line[0] != '@': error('Invalid bam2fq output.')
 		line = line[:-1]
@@ -210,9 +211,19 @@ def sam_reads_raw(bam_path, out_prefix):
 #######################
 
 def sam_unaligned_reads(bam_path):
-	# FIXME: We assume that each read only has one alignment in the BAM file.
-	for al in read_sam(bam_path, 'u'):
-		sys.stdout.write('>%s\n%s\n' % (al[0], al[9]))
+	# The "samtools bam2fq" command does not output supplementary or
+	# secondary alignments. Each read has max 1 primary alignment.
+	options = '-n' if has_mate_suffixes(bam_path) else ''
+	bam2fq = shell_stdout('samtools view -u -f 0x4 -F 0x900 %s | samtools bam2fq %s -' % (bam_path, options))
+	for line in bam2fq:
+		if line[0] != '@': error('Invalid bam2fq output.')
+		sys.stdout.write('>')
+		sys.stdout.write(line[1:])
+		sys.stdout.write(next(bam2fq))
+
+		# Skip per-base qualities. They can start with '@'.
+		next(bam2fq)
+		next(bam2fq)
 
 
 
