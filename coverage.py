@@ -24,11 +24,11 @@ Options:
 """
 
 from __future__ import print_function
-import sys, docopt, re, os
+import sys, docopt, re, os, math
 from pypette import zopen, shell, revcomplement, info, error, shell_stdout
 from pypette import Object
 from sam import read_sam, ref_sequence_sizes
-import numpy as np
+#import numpy as np
 
 
 
@@ -62,11 +62,21 @@ def read_fixed_wig(wig_path):
 	if chr: track.values = values[0:N]	 # Remove preallocated space
 	return tracks
 		
-	
-		
-		
-		
-		
+
+
+
+def parse_wig_header(line):
+	m = re.search(r'chrom=(\w+)', line)
+	chr = m.group(1)
+	m = re.search(r'start=(\d+)', line)
+	start = int(m.group(1))
+	m = re.search(r'step=(\d+)', line)
+	step = int(m.group(1))
+	m = re.search(r'span=(\d+)', line)
+	span = int(m.group(1)) if m else -1
+	return (chr, start, step, span)
+
+
 
 
 
@@ -206,26 +216,31 @@ def coverage_telomere(bam_path):
 
 def coverage_logratio(test_wig_path, ref_wig_path, min_ref=1):
 	if min_ref <= 0: error('<min_ref> must be a positive number.')
-		
-	test = read_fixed_wig(test_wig_path)
-	ref = read_fixed_wig(ref_wig_path)
-
-	# Sanity checks
-	for chr in test:
-		if not chr in ref: error('Track %s missing from reference.' % chr)
-		if test[chr].start != ref[chr].start:
-			error('Start coordinate mismatch in track %s.' % chr)
-		if test[chr].step != ref[chr].step:
-			error('Step mismatch in track %s.' % chr)
 	
-	for chr in test:
-		logratios = np.log2(test[chr].values / ref[chr].values)
-		logratios[ref[chr].values < min_ref] = np.nan
-		span = test[chr].span
-		print('fixedStep chrom=%s start=%d step=%d%s' % (chr,
-			test[chr].start, test[chr].step,
-			(' span=%d' % span) if span > 0 else ''))
-		for v in logratios: print('%.2f' % v)
+	test_wig = zopen(test_wig_path)
+	ref_wig = zopen(ref_wig_path)
+
+	while True:
+		try:
+			test_line = next(test_wig)
+			ref_line = next(ref_wig)
+		except: break
+		if test_line[0] == 'f' and test_line.startswith('fixedStep'):
+			test_header = parse_wig_header(test_line)
+			ref_header = parse_wig_header(ref_line)
+			if test_header != ref_header: error('Header mismatch')
+			chr, start, step, span = test_header
+			print('fixedStep chrom=%s start=%d step=%d%s' % (chr,
+				start, step, (' span=%d' % span) if span > 0 else ''))
+			continue
+
+		ref_count = float(ref_line)
+		if ref_count < min_ref:
+			print('NaN')
+		else:
+			print('%.2f' % math.log(float(test_line) / float(ref_line), 2))
+
+
 	
 		
 	
