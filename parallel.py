@@ -116,7 +116,7 @@ def parallel(command, job_name, max_workers, cpus, memory, partition,
 		# Required memory is given in GB per job step. Convert to MB per CPU.
 		mem_per_cpu = round(float(memory) / cpus * 1000)
 		sbatch_script = sbatch_template % (partition, job_name, cpus,
-			mem_per_cpu, 60 * time_limit, script_dir, script_dir)
+			mem_per_cpu, 60 * time_limit, script_dir, script_dir, script_dir)
 		workers = [subprocess.Popen(['sbatch', '-Q'], stdin=subprocess.PIPE)
 			for p in range(max_workers)]
 		for w in workers:
