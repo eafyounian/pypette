@@ -9,6 +9,7 @@ Usage:
 
 Options:
   -h --help                Show this screen.
+  --type=TYPE              Only download specific file types (e.g. BAM).
   --filename=REGEXP        Regular expression that filename must match.
   --filename-in=PATH       List of filenames, everything else is excluded.
   --filename-not-in=PATH   List of filenames that must be excluded.
@@ -138,6 +139,10 @@ if __name__ == '__main__':
 		blacklist = [line.strip() for line in open(args['--filename-not-in'])]
 		samples = [s for s in samples if not s.files[0] in blacklist]
 	
+	# Only download specific file types
+	if args['--type']:
+		samples = [s for s in samples if s.type == args['--type']]
+
 	# Only keep the most recent versions of BAM files
 	if args['--most-recent']:
 		aliquots = {}
