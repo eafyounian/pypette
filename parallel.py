@@ -39,6 +39,7 @@ sbatch_template = '''#!/bin/bash -l
 #SBATCH -c %d
 #SBATCH --mem-per-cpu=%d
 #SBATCH -t %d
+#SBATCH -o %s/worker.err
 #SBATCH -e %s/worker.err
 #SBATCH --open-mode=append
 parallel worker %s
