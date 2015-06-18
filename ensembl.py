@@ -1,14 +1,14 @@
 #!/bin/env pypy
 
 """
-Tools for the manipulation of GTF files.
+Tools for analyzing Ensembl annotations.
 
 Usage:
-  gtf cleanup ensembl <gtf_file>
-  gtf to gene bed <gtf_file>
-  gtf to transcript bed <gtf_file>
-  gtf to exon bed <gtf_file>
-  gtf to composite bed <gtf_file>
+  ensembl gene bed <gtf_file>
+  ensembl transcript bed <gtf_file>
+  ensembl exon bed <gtf_file>
+  ensembl cds bed <gtf_file>
+  ensembl cleanup <gtf_file>
 
 Options:
   -h --help         Show this screen.
@@ -21,15 +21,15 @@ from sam import read_sam
 
 human_chr = ['%d' % c for c in range(1, 23)] + ['X', 'Y']
 human_chr = set(human_chr + ['chr%s' % c for c in human_chr])
-ensembl_reasonable_gene_types = ['protein_coding', 'processed_transcript',
+reasonable_gene_types = ['protein_coding', 'processed_transcript',
 	'pseudogene', 'lincRNA']
 
 
-###################
-# GTF TO GENE BED #
-###################
+####################
+# ENSEMBL GENE BED #
+####################
 
-def gtf_to_gene_bed(gtf_path):
+def ensembl_gene_bed(gtf_path):
 	gene_id_to_name = {}
 	gene_exons = {}
 	
@@ -38,7 +38,7 @@ def gtf_to_gene_bed(gtf_path):
 		if line.startswith('#'): continue
 		c = line.rstrip('\n').split('\t')
 		if not c[0] in human_chr: continue
-		if not c[1] in ensembl_reasonable_gene_types: continue
+		if not c[1] in reasonable_gene_types: continue
 		if c[2] != 'exon': continue
 		
 		chr, start, end, strand = c[0], int(c[3]), int(c[4]), c[6]
@@ -73,11 +73,11 @@ def gtf_to_gene_bed(gtf_path):
 
 
 
-#########################
-# GTF TO TRANSCRIPT BED #
-#########################
+##########################
+# ENSEMBL TRANSCRIPT BED #
+##########################
 
-def gtf_to_transcript_bed(gtf_path):
+def ensembl_transcript_bed(gtf_path):
 	tx_id_to_gene = {}
 	tx_exons = {}
 	
@@ -86,7 +86,7 @@ def gtf_to_transcript_bed(gtf_path):
 		if line.startswith('#'): continue
 		c = line.rstrip('\n').split('\t')
 		if not c[0] in human_chr: continue
-		if not c[1] in ensembl_reasonable_gene_types: continue
+		if not c[1] in reasonable_gene_types: continue
 		if c[2] != 'exon': continue
 		
 		chr, start, end, strand = c[0], int(c[3]), int(c[4]), c[6]
@@ -114,21 +114,22 @@ def gtf_to_transcript_bed(gtf_path):
 
 
 
-###################
-# GTF TO EXON BED #
-###################
+####################
+# ENSEMBL EXON BED #
+####################
 
-def gtf_to_exon_bed(gtf_path):
+def ensembl_exon_bed(gtf_path):
 	for line in zopen(gtf_path):
 		if line.startswith('#'): continue
 		c = line.rstrip('\n').split('\t')
 		if not c[0] in human_chr: continue
-		if not c[1] in ensembl_reasonable_gene_types: continue
+		if not c[1] in reasonable_gene_types: continue
 		if c[2] != 'exon': continue
 
 		chr, start, end = c[0], int(c[3]), int(c[4])
 		if not chr.startswith('chr'): chr = 'chr' + chr
-		gene_id = re.search(r'gene_id "(.+?)"', line).group(1)
+		gene_id = '%s:%s' % (re.search(r'gene_id "(.+?)"', line).group(1),
+			re.search(r'gene_name "(.+?)"', line).group(1))
 		
 		print('%s\t%d\t%s\t%s\t\t%s' % (chr, start-1, end, gene_id, c[6]))
 
@@ -140,49 +141,37 @@ def gtf_to_exon_bed(gtf_path):
 
 
 
-########################
-# GTF TO COMPOSITE BED #
-########################
 
-def gtf_to_composite_bed(bed_path):
-	genes = {}
-	
-	bed_file = zopen(bed_path)
-	for line in bed_file:
+####################
+# ENSEMBL CDS BED #
+####################
+
+def ensembl_cds_bed(gtf_path):
+	for line in zopen(gtf_path):
 		if line.startswith('#'): continue
 		c = line.rstrip('\n').split('\t')
 		if not c[0] in human_chr: continue
-		if not c[1] in ensembl_reasonable_gene_types: continue
-		if c[2] != 'exon': continue
+		if not c[1] in reasonable_gene_types: continue
+		if c[2] != 'CDS': continue
 
 		chr, start, end = c[0], int(c[3]), int(c[4])
 		if not chr.startswith('chr'): chr = 'chr' + chr
 		gene_id = '%s:%s' % (re.search(r'gene_id "(.+?)"', line).group(1),
 			re.search(r'gene_name "(.+?)"', line).group(1))
 		
-	 	gene = genes.setdefault(gene_id, [chr, [(start, end)]])
-	 	if chr != gene[0]: error('Chromosome mismatch.')
-		
-	 	exons = gene[1]
-	 	overlapping = [ex for ex in exons if end >= ex[0] and start <= ex[1]]
-	 	disjoint = [ex for ex in exons if not (end >= ex[0] and start <= ex[1])]
-	 	disjoint.append((min([start] + [ex[0] for ex in overlapping]),
-	 		max([end] + [ex[1] for ex in overlapping])))
-	 	gene[1] = disjoint
+		print('%s\t%d\t%s\t%s\t\t%s' % (chr, start-1, end, gene_id, c[6]))
 
-	for gene_id, gene in genes.iteritems():
-	 	exons = gene[1]
-	 	for ex in exons:
-	 		print('%s\t%d\t%d\t%s' % (gene[0], ex[0] - 1, ex[1], gene_id))
+
+
 
 
 
 
 ###################
-# CLEANUP ENSEMBL #
+# ENSEMBL CLEANUP #
 ###################
 
-def cleanup_ensembl(gtf_path):
+def ensembl_cleanup(gtf_path):
 	valid_chr = set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
 		'11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
 		'21', '22', 'X', 'Y', 'MT'])
@@ -202,16 +191,16 @@ def cleanup_ensembl(gtf_path):
 
 if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
-	if args['to'] and args['gene'] and args['bed']:
-		gtf_to_gene_bed(args['<gtf_file>'])
-	elif args['to'] and args['transcript'] and args['bed']:
-		gtf_to_transcript_bed(args['<gtf_file>'])
-	elif args['to'] and args['composite'] and args['bed']:
-		gtf_to_composite_bed(args['<gtf_file>'])
-	elif args['to'] and args['exon'] and args['bed']:
-		gtf_to_exon_bed(args['<gtf_file>'])
-	elif args['cleanup'] and args['ensembl']:
-		cleanup_ensembl(args['<gtf_file>'])
+	if args['gene'] and args['bed']:
+		ensembl_gene_bed(args['<gtf_file>'])
+	elif args['transcript'] and args['bed']:
+		ensembl_transcript_bed(args['<gtf_file>'])
+	elif args['exon'] and args['bed']:
+		ensembl_exon_bed(args['<gtf_file>'])
+	elif args['cds'] and args['bed']:
+		ensembl_cds_bed(args['<gtf_file>'])
+	elif args['cleanup']:
+		ensembl_cleanup(args['<gtf_file>'])
 
 
 
