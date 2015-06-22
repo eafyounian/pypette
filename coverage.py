@@ -4,7 +4,7 @@
 Tools for copy number analysis and visualization.
 
 Usage:
-  coverage tiled <bam_file> <window_size> [-s N] [-q N] [-S|-1|-2] [-P|-M] 
+  coverage grid <genome_file> <window_size> [-s N]
   coverage cds <bam_file> <gtf_file>
   coverage telomere <bam_file>
   coverage logratio <test_wig> <ref_wig> <min_ref>
@@ -15,22 +15,15 @@ Usage:
   coverage format igv <wig_file>
 
 Options:
-  -h --help         Show this screen.
-  -q --quality=N    Minimum alignment quality [default: 10].
-  -s --step=N       Step size for window placement [default: window size / 2].
-  -S --single       Use all reads for coverage calculation, not just paired.
-  -P --plus         Calculate coverage only for the plus strand.
-  -M --minus        Calculate coverage only for the minus strand.
+  -h --help       Show this screen.
+  -s --step=N     Step size for window placement [default: window size / 2].
 """
 
 from __future__ import print_function
-import sys, docopt, re, os, math
+import sys, docopt, re, os, math, tempfile, shutil, subprocess
 from pypette import zopen, shell, revcomplement, info, error, shell_stdout
 from pypette import Object
 from sam import read_sam, ref_sequence_sizes
-#import numpy as np
-
-
 
 class WigTrack: pass
 
@@ -83,59 +76,19 @@ def parse_wig_header(line):
 	
 
 
-##################
-# COVERAGE TILED #
-##################
+#################
+# COVERAGE GRID #
+#################
 
-def coverage_tiled(bam_path, window_size, quality, mode, step,
-	max_frag_len=1000):
-	
-	chr_sizes = ref_sequence_sizes(bam_path)
-	chr_cov = { chr: np.zeros(int(size / step) + 1, np.uint32)
-		for chr, size in chr_sizes.iteritems() }
-	
-	win_overlap = window_size - step
-	
-	empty = np.array([])
-	cov = empty
-	chr = ''
-	
-	if 'A' in mode:
-		# Count the entire length of the fragment.
-		for al in read_sam(bam_path, mode, min_quality=quality):
-			pos = int(al[3]); mpos = int(al[7])
-			if al[6] != '=' or abs(pos - mpos) > max_frag_len: continue
-
-			# FIXME: Spliced reads are tallied as if they were not spliced.
-			start = (min(pos, mpos) - win_overlap - 1) / step
-			stop = (max(pos, mpos) + len(al[9]) - 1) / step
-			if al[2] != chr:
-				chr = al[2]
-				cov = chr_cov.get(al[2], empty)
-			if not cov.size: continue
-			start = max(start, 0)
-			stop = min(stop, cov.size-1)
-			cov[start:stop+1] += 1
-		
-	else:
-		# Count all individual reads.
-		for al in read_sam(bam_path, mode, min_quality=quality):
-			pos = int(al[3])
-
-			# FIXME: Spliced reads are tallied as if they were not spliced.
-			start = (pos - win_overlap - 1) / step
-			stop = (pos + len(al[9]) - 1) / step
-			if al[2] != chr:
-				chr = al[2]
-				cov = chr_cov.get(al[2], empty)
-			if not cov.size: continue
-			start = max(start, 0)
-			stop = min(stop, cov.size-1)
-			cov[start:stop+1] += 1
-
-	for chr in chr_cov:
-		print('fixedStep chrom=%s start=%d step=%d' % (chr, step, step))
-		for x in chr_cov[chr]: print(x)
+def coverage_grid(genome_path, winsize, step):
+	for line in zopen(genome_path):
+		if not line.strip(): continue
+		c = line.rstrip('\n').split('\t')
+		chr, chr_len = c[0], int(c[1])
+		start = 1
+		while start + winsize < chr_len:
+			print('%s\t%d\t%d' % (chr, start - 1, start + winsize - 1))
+			start += step
 
 
 
@@ -156,7 +109,7 @@ def coverage_cds(bam_path, gtf_path):
 	info('Constructing a map of coding regions...')
 	coding = {}
 	for chr, size in chr_sizes.iteritems():
-		coding[chr] = np.zeros(size, np.bool_)
+		coding[chr] = [False] * size
 	for line in zopen(gtf_path):
 		if line.startswith('#'): continue
 		cols = line.split('\t')
@@ -378,20 +331,11 @@ def coverage_format_igv(wig_path):
 
 if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
-	if args['tiled']:
+	if args['grid']:
 		wsize = int(args['<window_size>'])
 		step = wsize / 2
 		if args['--step'].isdigit(): step = int(args['--step'])
-		
-		mode = 'A'
-		if '-S' in args: mode = 'a'
-		if '-1' in args: mode = 'a1'
-		if '-2' in args: mode = 'a2'
-		if args['--plus']: mode += '+'
-		if args['--minus']: mode += '-'
-		
-		coverage_tiled(args['<bam_file>'], wsize,
-			quality=int(args['--quality']), mode=mode, step=step)
+		coverage_grid(args['<genome_file>'], wsize, step=step)
 	elif args['cds']:
 		coverage_cds(args['<bam_file>'], args['<gtf_file>'])
 	elif args['telomere']:
