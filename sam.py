@@ -8,7 +8,7 @@ Usage:
   sam unaligned reads <bam_file>
   sam compact <bam_file>
   sam discordant pairs [-q N] <bam_file> <min_distance_kb>
-  sam extend fragments <bam_file> [--fragment-length=N]
+  sam fragments <bam_file> <max_frag_len>
   sam read length <bam_file>
   sam pileup each <vcf_file> <bam_files>... [--quality=N]
   sam pileup <region> <bam_files>... [--quality=N]
@@ -22,17 +22,13 @@ Usage:
 Options:
   -h --help             Show this screen.
   -r --raw              Output in raw sequence format.
-  --fragment-length=N   Length to which single end reads will be extended
-                        [default: 0].
-  -p --parallel=N       Number of parallel processes to use [default: 8].
-  -P --partition=PART   SLURM partition to run jobs on [default: local].
   -q --quality=N        Minimum alignment quality [default: 15].
   -s --strand=M         Strand specific read counts [default: none].
 """
 
 from __future__ import print_function
 import sys, subprocess, docopt, re, os
-from pypette import zopen, shell, info, error, shell_stdout
+from pypette import zopen, shell, info, error, shell_stdin, shell_stdout
 
 
 def read_sam(sam_path, mode='', min_quality=0):
@@ -40,7 +36,8 @@ def read_sam(sam_path, mode='', min_quality=0):
 	flag_on = 0x0
 	flag_off = 0x900       # Ignore secondary and supplementary alignments
 	if 'a' in mode: flag_off |= 0x4                   # Aligned
-	if 'A' in mode: flag_on |= 0x1; flag_off |= 0xc   # Aligned read pairs
+	if 'A' in mode: flag_on |= 0x1; flag_off |= 0xc   # Both mates aligned
+	if 'C' in mode: flag_on |= 0x3; flag_off |= 0xc   # Concordant read pairs
 	if 'u' in mode: flag_on |= 0x4                    # Unaligned
 	if '1' in mode: flag_on |= 0x40                   # First mates
 	if '2' in mode: flag_on |= 0x80                   # Second mates
@@ -273,48 +270,22 @@ def sam_discordant_pairs(bam_path, min_distance, min_mapq=15):
 
 
 
-########################
-# SAM EXTEND FRAGMENTS #
-########################
+#################
+# SAM FRAGMENTS #
+#################
 
-def sam_extend_fragments(bam_path, extend_len=0):
-	frag_id = ''
-	frag_pieces = 0
-	
-	out = shell_stdout('samtools sort -on %s %s | bedtools bamtobed -i stdin' %
-		(bam_path, bam_path))
-	for line in out:
-		tokens = line.split('\t')
-			
-		read_id = tokens[3]
-		if read_id[-2] == '/': read_id = read_id[:-2]
-		
-		if read_id == frag_id:
-			frag_pieces += 1
-			if tokens[0] == frag_chr:
-				frag_start = min(frag_start, int(tokens[1]))
-				frag_end = max(frag_end, int(tokens[2]))
-			else:
-				frag_id = ''    # Fragment is interchromosomal, discard it
-		
-		else:
-			if frag_pieces == 1 and extend_len > 0:
-				if frag_strand == '+':
-					frag_end = frag_start + extend_len - 1
-				else:
-					frag_start = frag_end - extend_len + 1
-			
-			if frag_pieces > 0:
-				print('%s\t%d\t%d' % (frag_chr, frag_start - 1, frag_end))
-			
-			frag_id = read_id
-			frag_chr = tokens[0]
-			frag_strand = tokens[5]
-			frag_start = int(tokens[1])
-			frag_end = int(tokens[2])
-			frag_pieces = 1
-	
-			
+def sam_fragments(bam_path, max_frag_len):
+	# Here read_sam(mode='A1') is not good because if we only look at mate #1,
+	# they are sometimes slightly out of order in the BAM file.
+	for al in read_sam(bam_path, 'A'):
+		if al[6] != '=': continue
+		pos, mpos = int(al[3]), int(al[7])
+		if mpos < pos: continue   # Only count the mate with the lower position
+		mlen = len(al[9])         # Assumes that mates are equal length!
+		fragsize = mpos - pos + mlen
+		if fragsize > max_frag_len: continue
+		print('%s\t%d\t%d' % (al[2], pos - 1, mpos + mlen - 1))
+
 
 
 
@@ -420,6 +391,7 @@ def sam_pileup_each(vcf_path, bam_paths, min_al_quality=0):
 		sam_pileup('%s:%s' % (tokens[0], tokens[1]), bam_paths,
 			min_al_quality=min_al_quality)
 		print()
+
 
 
 
@@ -633,9 +605,8 @@ if __name__ == '__main__':
 		sam_discordant_pairs(args['<bam_file>'],
 			int(args['<min_distance_kb>']) * 1000,
 			min_mapq=int(args['--quality']))
-	elif args['extend'] and args['fragments']:
-		sam_extend_fragments(args['<bam_file>'],
-			extend_len=int(args['--fragment-length']))
+	elif args['fragments']:
+		sam_fragments(args['<bam_file>'], args['<max_frag_len>'])
 	elif args['read'] and args['length']:
 		read_len = read_length(args['<bam_file>'])
 		if not read_len: error('Could not determine read length.')
