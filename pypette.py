@@ -161,7 +161,7 @@ def read_flat_seq(flat_seq_dir):
 			os.path.join(flat_seq_dir, file)).read()
 	return entries
 
-revcomp_translate = string.maketrans('acgtACGT', 'tgcaTGCA')
+revcomp_translate = str.maketrans('acgtACGT', 'tgcaTGCA')
 
 def revcomplement(seq):
 	return seq.translate(revcomp_translate)[::-1]
