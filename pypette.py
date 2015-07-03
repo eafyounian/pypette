@@ -1,5 +1,5 @@
 from __future__ import print_function
-import sys, re, datetime, pwd, os, subprocess, string, random, gc, itertools
+import sys, re, datetime, pwd, os, subprocess, random, gc, itertools
 from collections import defaultdict
 
 
@@ -161,7 +161,11 @@ def read_flat_seq(flat_seq_dir):
 			os.path.join(flat_seq_dir, file)).read()
 	return entries
 
-revcomp_translate = str.maketrans('acgtACGT', 'tgcaTGCA')
+if sys.version_info[0] >= 3:
+	revcomp_translate = str.maketrans('acgtACGT', 'tgcaTGCA')
+else:
+	import string
+	revcomp_translate = string.maketrans('acgtACGT', 'tgcaTGCA')
 
 def revcomplement(seq):
 	return seq.translate(revcomp_translate)[::-1]
