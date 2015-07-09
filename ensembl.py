@@ -51,7 +51,7 @@ def ensembl_gene_bed(gtf_path):
 		gene_name = m.group(1)
 		
 		exons = gene_exons.setdefault(gene_id, [])
-		exons.append((chr, strand, pos[0], pos[1]))
+		exons.append((chr, strand, start, end))
 		
 		gene_id_to_name[gene_id] = gene_name
 		
