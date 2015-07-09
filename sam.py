@@ -63,6 +63,12 @@ def has_mate_suffixes(sam_path):
 		if len(first_ids) < 10: first_ids.append(al[0])
 	return all(id.endswith('/1') or id.endswith('/2') for id in first_ids)
 
+def has_base_qualities(sam_path):
+	first_quals = []
+	for al in read_sam(sam_path):
+		if len(first_quals) < 10: first_quals.append(al[10])
+	return all(qual == '*' for qual in first_quals)
+
 
 def ref_sequence_sizes(sam_path):
 	out = shell_stdout('samtools view -H %s' % sam_path)
@@ -211,16 +217,19 @@ def sam_unaligned_reads(bam_path):
 	# The "samtools bam2fq" command does not output supplementary or
 	# secondary alignments. Each read has max 1 primary alignment.
 	options = '-n' if has_mate_suffixes(bam_path) else ''
-	bam2fq = shell_stdout('samtools view -u -f 0x4 -F 0x900 %s | samtools bam2fq %s -' % (bam_path, options))
-	for line in bam2fq:
-		if line[0] != '@': error('Invalid bam2fq output.')
-		sys.stdout.write('>')
-		sys.stdout.write(line[1:])
-		sys.stdout.write(next(bam2fq))
+	if has_base_qualities(bam_path):
+		shell('samtools view -u -f 0x4 -F 0x900 %s | samtools bam2fq %s -' % (bam_path, options))
+	else:
+		bam2fq = shell_stdout('samtools view -u -f 0x4 -F 0x900 %s | samtools bam2fq %s -' % (bam_path, options))
+		for line in bam2fq:
+			if line[0] != '@': error('Invalid bam2fq output.')
+			sys.stdout.write('>')
+			sys.stdout.write(line[1:])
+			sys.stdout.write(next(bam2fq))
 
-		# Skip per-base qualities. They can start with '@'.
-		next(bam2fq)
-		next(bam2fq)
+			# Skip per-base qualities. They can start with '@'.
+			next(bam2fq)
+			next(bam2fq)
 
 
 
@@ -408,8 +417,9 @@ def sam_pileup_each(vcf_path, bam_paths, min_al_quality=0):
 
 def sam_count(bam_path, bed_path,
 	genome_path='~/organisms/homo_sapiens/hg19.chrom.sizes'):
-	shell('bedtools coverage -split -sorted -counts -g %s -a %s -b %s | cut -f4' %
-		(genome_path, bed_path, bam_path))
+	bed_cols = len(next(open(bed_path)).split('\t'))
+	shell('bedtools coverage -split -sorted -counts -g %s -a %s -b %s | cut -f%d' %
+		(genome_path, bed_path, bam_path, bed_cols + 1))
 
 
 
@@ -606,7 +616,7 @@ if __name__ == '__main__':
 			int(args['<min_distance_kb>']) * 1000,
 			min_mapq=int(args['--quality']))
 	elif args['fragments']:
-		sam_fragments(args['<bam_file>'], args['<max_frag_len>'])
+		sam_fragments(args['<bam_file>'], int(args['<max_frag_len>']))
 	elif args['read'] and args['length']:
 		read_len = read_length(args['<bam_file>'])
 		if not read_len: error('Could not determine read length.')
