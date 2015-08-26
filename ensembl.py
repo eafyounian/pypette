@@ -4,14 +4,15 @@
 Tools for analyzing Ensembl annotations.
 
 Usage:
-  ensembl gene bed <gtf_file>
-  ensembl transcript bed <gtf_file>
-  ensembl exon bed <gtf_file>
-  ensembl cds bed <gtf_file>
-  ensembl cleanup <gtf_file>
+  ensembl gene bed [options] <gtf_file>
+  ensembl transcript bed [options] <gtf_file>
+  ensembl exon bed [options] <gtf_file>
+  ensembl cds bed [options] <gtf_file>
+  ensembl cleanup [options] <gtf_file>
 
 Options:
-  -h --help         Show this screen.
+  -h --help           Show this screen.
+  --protein-coding    Only output protein coding genes.
 """
 
 from __future__ import print_function
@@ -21,7 +22,7 @@ from sam import read_sam
 
 human_chr = ['%d' % c for c in range(1, 23)] + ['X', 'Y']
 human_chr = set(human_chr + ['chr%s' % c for c in human_chr])
-reasonable_gene_types = ['protein_coding', 'processed_transcript',
+accepted_gene_types = ['protein_coding', 'processed_transcript',
 	'pseudogene', 'lincRNA']
 
 
@@ -38,7 +39,7 @@ def ensembl_gene_bed(gtf_path):
 		if line.startswith('#'): continue
 		c = line.rstrip('\n').split('\t')
 		if not c[0] in human_chr: continue
-		if not c[1] in reasonable_gene_types: continue
+		if not c[1] in accepted_gene_types: continue
 		if c[2] != 'exon': continue
 		
 		chr, start, end, strand = c[0], int(c[3]), int(c[4]), c[6]
@@ -86,7 +87,7 @@ def ensembl_transcript_bed(gtf_path):
 		if line.startswith('#'): continue
 		c = line.rstrip('\n').split('\t')
 		if not c[0] in human_chr: continue
-		if not c[1] in reasonable_gene_types: continue
+		if not c[1] in accepted_gene_types: continue
 		if c[2] != 'exon': continue
 		
 		chr, start, end, strand = c[0], int(c[3]), int(c[4]), c[6]
@@ -123,7 +124,7 @@ def ensembl_exon_bed(gtf_path):
 		if line.startswith('#'): continue
 		c = line.rstrip('\n').split('\t')
 		if not c[0] in human_chr: continue
-		if not c[1] in reasonable_gene_types: continue
+		if not c[1] in accepted_gene_types: continue
 		if c[2] != 'exon': continue
 
 		chr, start, end = c[0], int(c[3]), int(c[4])
@@ -151,7 +152,7 @@ def ensembl_cds_bed(gtf_path):
 		if line.startswith('#'): continue
 		c = line.rstrip('\n').split('\t')
 		if not c[0] in human_chr: continue
-		if not c[1] in reasonable_gene_types: continue
+		if not c[1] in accepted_gene_types: continue
 		if c[2] != 'CDS': continue
 
 		chr, start, end = c[0], int(c[3]), int(c[4])
@@ -191,6 +192,11 @@ def ensembl_cleanup(gtf_path):
 
 if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
+	print(args)
+
+	if args['--protein-coding']:
+		accepted_gene_types = ['protein_coding']
+
 	if args['gene'] and args['bed']:
 		ensembl_gene_bed(args['<gtf_file>'])
 	elif args['transcript'] and args['bed']:
