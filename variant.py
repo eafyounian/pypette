@@ -42,7 +42,6 @@ Options:
 
 from __future__ import print_function
 import sys, subprocess, docopt, re, os, string, math, itertools
-#import numpy as np
 from collections import defaultdict
 from pypette import zopen, shell, shell_stdout, shell_stdinout
 from pypette import info, error, natural_sorted, revcomplement, read_fasta
@@ -103,7 +102,7 @@ def call_genotypes(alt, total, options):
 		if total[s] - alt[s] >= options.min_ref_reads and \
 			(total[s] - alt[s]) / total[s] >= options.min_ref_ratio:
 			gtypes[s] = 1
-		ratio = alt[s] / total[s]
+		ratio = float(alt[s]) / total[s]
 		if alt[s] >= options.min_hetz_reads and ratio >=options.min_hetz_ratio:
 			gtypes[s] = 2
 		if alt[s] >= options.min_homz_reads and ratio >=options.min_homz_ratio:
@@ -204,7 +203,7 @@ def variant_recall(vcf_path, options):
 		if not line.startswith('#'): break
 	sys.stdout.write(line)
 
-	headers = line.rstrip().split('\t')
+	headers = line.rstrip('\n').split('\t')
 	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
 	samples = headers[sample_col:]
 	
@@ -215,7 +214,7 @@ def variant_recall(vcf_path, options):
 		total_reads = [int(gt[1]) for gt in gt_reads]
 		
 		genotypes = call_genotypes(reads, total_reads, options)
-		if all(genotypes < 2): continue
+		if all(gt < 2 for gt in genotypes): continue
 			
 		gtypes = ('%s:%d:%d' % (gt_symbols[g], reads[s], total_reads[s])
 			for s, g in enumerate(genotypes))
@@ -367,7 +366,7 @@ def somatic(vcf_path, sample_pairs):
 	sys.stdout.write(line)
 	
 	for line in vcf_file:
-		cols = line.rstrip().split('\t')
+		cols = line.rstrip('\n').split('\t')
 		gt_cols = cols[sample_col:]
 		
 		genotypes = [gt_symbols.index(g[:g.find(':')]) for g in gt_cols]
@@ -395,8 +394,8 @@ def discard_if_in_controls(vcf_path, control_samples, threshold):
 
 	headers = line.rstrip().split('\t')
 	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
-	control = np.array([any(re.search(rx, s) for rx in control_samples)
-		for s in headers[sample_col:]])
+	control = [any(re.search(rx, s) for rx in control_samples)
+		for s in headers[sample_col:]]
 	if not any(control): error('No control samples found.')
 
 	info('Using these %d control samples:' % sum(control))
@@ -405,9 +404,10 @@ def discard_if_in_controls(vcf_path, control_samples, threshold):
 
 	sys.stdout.write(line)
 	for line in vcf_file:
-		cols = line.rstrip().split('\t')[sample_col:]
-		gt = np.array([gt_symbols.index(c[:c.find(':')]) for c in cols])
-		if sum(control & (gt > 1)) >= threshold: continue
+		cols = line.rstrip('\n').split('\t')[sample_col:]
+		genotypes = [gt_symbols.index(c[:c.find(':')]) for c in cols]
+		if sum(c and gt > 1 for c, gt in zip(control, genotypes)) >= threshold:
+			continue
 		sys.stdout.write(line)
 
 
@@ -556,8 +556,8 @@ def variant_conservation(vcf_path):
 			chr = cols[0]
 			print('variableStep chrom=%s' % chr)
 
-		genotypes = np.array([gt_symbols.index(gt[:gt.find(':')])
-			for gt in cols[sample_col:]])
+		genotypes = [gt_symbols.index(gt[:gt.find(':')])
+			for gt in cols[sample_col:]]
 		if any(genotypes == 0): continue
 
 		is_alt = (genotypes >= 2)
@@ -630,7 +630,7 @@ def variant_statistics(vcf_path):
 	for line in vcf_file:
 		if not line.startswith('#'): break
 
-	headers = line[:-1].split('\t')
+	headers = line.rstrip('\n').split('\t')
 	sample_col = headers.index('ESP6500' if 'ESP6500' in headers else 'ALT')+1
 	samples = headers[sample_col:]
 	
@@ -906,7 +906,7 @@ def variant_keep_samples(vcf_path, regex, discard=False):
 ##############################
 
 def variant_heterozygous_bases(vcf_path, kgenomes_path):
-	is_snp = np.zeros(300*1000*1000, np.bool_)
+	is_snp = bytearray(int(300e6))
 	for line in zopen(kgenomes_path):
 		pos = int(line[:-1].split('\t')[1])
 		is_snp[pos] = True
@@ -959,12 +959,13 @@ def variant_allele_fractions(vcf_path, pos_path):
 		if not ':'.join(cols[0:2]) in snps: continue
 
 		reads = [gt.split(':')[1:3] for gt in cols[sample_col:]]
-		total_reads = np.array([float(r[1]) for r in reads])
-		reads = np.array([float(r[0]) for r in reads])
-		frac = reads / total_reads
+		sys.stdout.write('\t'.join(cols[:sample_col]))
+		for r in reads:
+			alt, total = float(r[0]), int(r[1])
+			sys.stdout.write('NaN' if total == 0 else '\t%.2f' % (alt / total))
+		sys.stdout.write('\n')
 		#frac = [f if f <= 0.5 else 1.0 - f for f in frac]
-		cols[sample_col:] = ['%.2f' % f for f in frac]
-		print('\t'.join(cols))
+
 
 
 
