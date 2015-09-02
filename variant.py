@@ -962,7 +962,7 @@ def variant_allele_fractions(vcf_path, pos_path):
 		sys.stdout.write('\t'.join(cols[:sample_col]))
 		for r in reads:
 			alt, total = float(r[0]), int(r[1])
-			sys.stdout.write('NaN' if total == 0 else '\t%.2f' % (alt / total))
+			sys.stdout.write('\tNaN' if total == 0 else '\t%.2f' % (alt / total))
 		sys.stdout.write('\n')
 		#frac = [f if f <= 0.5 else 1.0 - f for f in frac]
 
