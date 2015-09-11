@@ -7,7 +7,7 @@ Usage:
   sam reads [-r] <bam_file> <out_prefix>
   sam unaligned reads <bam_file>
   sam compact <bam_file>
-  sam discordant pairs [-q N] <bam_file> <min_distance_kb>
+  sam discordant pairs [-q N] [-O OR] <bam_file> <max_frag_size>
   sam fragments <bam_file> <max_frag_len>
   sam read length <bam_file>
   sam pileup each <vcf_file> <bam_files>... [--quality=N]
@@ -24,6 +24,7 @@ Options:
   -r --raw              Output in raw sequence format.
   -q --quality=N        Minimum alignment quality [default: 15].
   -s --strand=M         Strand specific read counts [default: none].
+  -O --orientation=OR   Read pair orientation (ff/fr) [default: fr].
 """
 
 from __future__ import print_function
@@ -60,7 +61,8 @@ def read_sam(sam_path, mode='', min_quality=0):
 def has_mate_suffixes(sam_path):
 	first_ids = []
 	for al in read_sam(sam_path):
-		if len(first_ids) < 10: first_ids.append(al[0])
+		if len(first_ids) >= 10: break
+		first_ids.append(al[0])
 	return all(id.endswith('/1') or id.endswith('/2') for id in first_ids)
 
 def has_base_qualities(sam_path):
@@ -266,12 +268,15 @@ def sam_compact(bam_path):
 # SAM DISCORDANT PAIRS #
 ########################
 
-def sam_discordant_pairs(bam_path, min_distance, min_mapq=15):
+def sam_discordant_pairs(bam_path, max_frag_size, orientation='fr',
+	min_mapq=15):
+	if orientation == 'fr': expect_same_strand = False
+	if orientation == 'ff': expect_same_strand = True
 	for al in read_sam(bam_path, 'A', min_quality=min_mapq):
-		if al[6] == '=' and abs(int(al[7]) - int(al[3])) <= min_distance:
+		flags = int(al[1])
+		if al[6] == '=' and abs(int(al[7]) - int(al[3])) <= max_frag_size and \
+			(flags & 16 == flags & 32) == expect_same_strand:
 			continue
-		if al[6] == '*': continue    # Sometimes unknown chromosomes show up
-		if 'M' in al[2] or 'M' in al[6]: continue    # Discard mitochondrial
 		sys.stdout.write('\t'.join(al))
 
 
@@ -612,9 +617,8 @@ if __name__ == '__main__':
 	elif args['compact']:
 		sam_compact(args['<bam_file>'])
 	elif args['discordant'] and args['pairs']:
-		sam_discordant_pairs(args['<bam_file>'],
-			int(args['<min_distance_kb>']) * 1000,
-			min_mapq=int(args['--quality']))
+		sam_discordant_pairs(args['<bam_file>'], int(args['<max_frag_size>']),
+			orientation=args['--orientation'], min_mapq=int(args['--quality']))
 	elif args['fragments']:
 		sam_fragments(args['<bam_file>'], int(args['<max_frag_len>']))
 	elif args['read'] and args['length']:
