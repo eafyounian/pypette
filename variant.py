@@ -88,7 +88,7 @@ def simple_pileup(bam_paths, genome_path, min_mapq=10, min_alt_alleles=3,
 	
 	# samtools mpileup will automatically ignore alignments flagged as
 	# duplicates
-	cmd = 'samtools mpileup -A -sB %s -q0 -f %s %s | %s/spileup %d %d' % (' '.join(options), genome_path,
+	cmd = 'samtools mpileup -d 10000 -A -sB %s -q0 -f %s %s | %s/spileup %d %d' % (' '.join(options), genome_path,
 		' '.join(bam_paths), helper_dir, min_alt_alleles, min_mapq)
 	#info('Pre-filtering mutations with the following command:\n%s' % cmd)
 	return shell_stdout(cmd)
