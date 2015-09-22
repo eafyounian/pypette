@@ -33,6 +33,7 @@ void count_allele(char* allele, int len, char quality, AlleleList* list) {
 	char ochar = allele[len]; allele[len] = 0;
 	
 	for (int i = 0; i < list->total; i++) {
+		assert(i < MAX_ALLELES);
 		if (strcmp(allele, list->alleles[i].seq) == 0) {
 			if (quality >= min_mapq)
 				list->alleles[i].high_count += 1;
@@ -56,6 +57,7 @@ void print_alleles(AlleleList* list) {
 	if (list->total == 0) return;
 	int i;
 	for (i = 0; i < list->total - 1; i++) {
+		assert(i < MAX_ALLELES);
 		printf("%s %d %d ", list->alleles[i].seq, list->alleles[i].high_count,
 			list->alleles[i].low_count);
 	}
@@ -116,9 +118,8 @@ int main(int argc, char** argv) {
 	size_t line_buf_size = 1024 * 1024;
 	char* line = malloc(line_buf_size);
 	
-	int tabs[MAX_TABS_ON_LINE];    // Tab character locations
-	
-	AlleleList sample_alleles[MAX_SAMPLES];
+	int* tabs = malloc(sizeof(int) * MAX_TABS_ON_LINE);  // Tab locations
+	AlleleList* sample_alleles = malloc(sizeof(AlleleList) * MAX_SAMPLES);
 	
 	// Expected format is:
 	// CHROMOSOME, POSITION, REF, [READ_COUNT, READ_BASES, BASEQ, MAPQ]+
@@ -160,6 +161,7 @@ int main(int argc, char** argv) {
 			AlleleList* alleles = &sample_alleles[s];
 			int alt_alleles = 0;
 			for (int a = 0; a < alleles->total; a++) {
+				assert(a < MAX_ALLELES);
 				if (alleles->alleles[a].seq[0] == '.' &&
 					alleles->alleles[a].seq[1] == '\0') continue;
 				if (alleles->alleles[a].high_count > best_alt_reads)
