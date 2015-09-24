@@ -33,7 +33,6 @@ void count_allele(char* allele, int len, char quality, AlleleList* list) {
 	char ochar = allele[len]; allele[len] = 0;
 	
 	for (int i = 0; i < list->total; i++) {
-		assert(i < MAX_ALLELES);
 		if (strcmp(allele, list->alleles[i].seq) == 0) {
 			if (quality >= min_mapq)
 				list->alleles[i].high_count += 1;
@@ -44,6 +43,7 @@ void count_allele(char* allele, int len, char quality, AlleleList* list) {
 	}
 	
 	// Did not find our allele. Add a new one.
+	assert(list->total < MAX_ALLELES);
 	list->alleles[list->total].high_count = (quality >= min_mapq);
 	list->alleles[list->total].low_count = (quality < min_mapq);
 	strncpy(list->alleles[list->total].seq, allele, MAX_ALLELE_LEN); 
@@ -57,10 +57,10 @@ void print_alleles(AlleleList* list) {
 	if (list->total == 0) return;
 	int i;
 	for (i = 0; i < list->total - 1; i++) {
-		assert(i < MAX_ALLELES);
 		printf("%s %d %d ", list->alleles[i].seq, list->alleles[i].high_count,
 			list->alleles[i].low_count);
 	}
+	assert(i < MAX_ALLELES);
 	printf("%s %d %d", list->alleles[i].seq, list->alleles[i].high_count,
 		list->alleles[i].low_count);
 }
@@ -92,6 +92,7 @@ int parse_pileup(char* bases, char* quality, AlleleList* alleles) {
 			}
 			i += len;
 		} else {
+			//assert(bases[i] == 'A' || bases[i] == 'C' || bases[i] == 'G' || bases[i] == 'T' || bases[i] == '.');
 			count_allele(bases + i, 1, quality[j++], alleles);
 		}
 	}
@@ -105,15 +106,19 @@ int main(int argc, char** argv) {
 
 	// Parse command line arguments.
 	int min_alt_reads = strtol(argv[1], NULL, 10);
-	if (errno == EINVAL) {
+	if (errno == EINVAL || min_alt_reads < 0) {
 		fprintf(stderr, "Invalid min_alt_reads argument.\n");
 		return -1;
 	}
+	fprintf(stderr, "Pre-filtering variants with less than %d alt reads...\n",
+		min_alt_reads);
+
 	min_mapq = strtol(argv[2], NULL, 10);
-	if (errno == EINVAL) {
+	if (errno == EINVAL || min_mapq < 0) {
 		fprintf(stderr, "Invalid min_mapq argument.\n");
 		return -1;
 	}
+	fprintf(stderr, "Ignoring reads with MAPQ below %d...\n", min_mapq);
 	
 	size_t line_buf_size = 1024 * 1024;
 	char* line = malloc(line_buf_size);
@@ -129,30 +134,23 @@ int main(int argc, char** argv) {
 		for (int i = 0; line[i]; i++) {
 			if (line[i] == '\t') {
 				assert(ntabs < MAX_TABS_ON_LINE);
-				tabs[ntabs] = i;
-				if (ntabs >= 2) line[i] = '\0';
-				ntabs += 1;
+				tabs[ntabs++] = i; line[i] = '\0';
 			}
 		}
 		if (ntabs < 3) continue;
 
-		int S = 0, i = 2;
-		while (i < ntabs) {
+		int S = 0, t = 2;
+		while (t < ntabs) {
 			assert(S < MAX_SAMPLES);
 			sample_alleles[S].total = 0;
-			if (!isdigit(line[tabs[i]+1])) {
-				fprintf(stderr, "Parse error at tab %d, char %c:\n%s\n", i,
-					line[tabs[i]+1], line);
-				return -1;
-			}
+			assert(isdigit(line[tabs[t]+1]));
 
 			// Note: Before samtools-1.1, if there were no reads overlapping
 			// a base, samtools mpileup would output 3 columns "0\t*\t*"
 			// instead of four. In samtools-1.1, output is always 4 columns.
-			parse_pileup(line + tabs[i+1] + 1, line + tabs[i+3] + 1,
+			parse_pileup(line + tabs[t+1] + 1, line + tabs[t+3] + 1,
 				&sample_alleles[S]);
-			i += 4;
-			S += 1;
+			t += 4; S += 1;
 		}
 		
 		// If all samples only show reference alleles, don't print anything.
@@ -170,7 +168,7 @@ int main(int argc, char** argv) {
 		}
 		
 		if (best_alt_reads >= min_alt_reads) {
-			fwrite(line, 1, tabs[2], stdout);  // First three columns.
+			printf("%s\t%s\t%s", line, line + tabs[0]+1, line + tabs[1]+1); 
 			for (int s = 0; s < S; s++) {
 				printf("\t");
 				print_alleles(&sample_alleles[s]);
@@ -178,7 +176,6 @@ int main(int argc, char** argv) {
 			printf("\n");
 			fflush(stdout);
 		}
-
 	}
 	return 0;
 }
