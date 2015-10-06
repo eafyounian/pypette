@@ -88,7 +88,7 @@ def simple_pileup(bam_paths, genome_path, min_mapq=10, min_alt_alleles=3,
 	
 	# samtools mpileup will automatically ignore alignments flagged as
 	# duplicates
-	cmd = 'samtools mpileup -d 100000 -A -R -sB %s -q0 -f %s %s | %s/spileup %d %d' % (' '.join(options), genome_path,
+	cmd = 'samtools mpileup -d 1000000 -A -R -sB %s -q0 -f %s %s | %s/spileup %d %d' % (' '.join(options), genome_path,
 		' '.join(bam_paths), helper_dir, min_alt_alleles, min_mapq)
 	#info('Pre-filtering mutations with the following command:\n%s' % cmd)
 	return shell_stdout(cmd)
@@ -234,10 +234,10 @@ def variant_recall(vcf_path, options):
 
 def variant_annotate(vcf_path):
 	format_annovar(vcf_path, 'anno_tmp.vcf')
-	shell('table_annovar.pl anno_tmp.vcf ~/tools/annovar-090513/humandb '
+	shell('table_annovar.pl anno_tmp.vcf ~/tools/annovar-170715/humandb '
 		'-buildver hg19 --remove --otherinfo --outfile annotated '
 		'-operation g,f,f,f '
-		'-protocol refGene,cosmic64,1000g2012feb_ALL,esp6500si_all')
+		'-protocol refGene,cosmic70,1000g2014oct_all,esp6500si_all')
 	
 	anno = open('annotated.hg19_multianno.txt')
 	out = zopen('annotated.vcf.gz', 'w')
@@ -245,11 +245,11 @@ def variant_annotate(vcf_path):
 	line = anno.next()
 	headers = ['CHROM', 'POSITION', 'REF', 'ALT', 'FUNCTION', 'NEARBY_GENES',
 		'EXONIC_FUNCTION', 'AA_CHANGE', 'COSMIC', '1000G', 'ESP6500']
-	headers += line.rstrip('\n').split('\t')[12:]
+	headers += line.rstrip('\n').split('\t')[13:]
 	out.write('\t'.join(headers) + '\n')
 	for line in anno:
 		tokens = line.rstrip('\n').split('\t')
-		out.write('\t'.join(tokens[0:2] + tokens[3:]))
+		out.write('\t'.join(tokens[0:2] + tokens[3:7] + tokens[8:]))
 		out.write('\n')
 	out.close()
 
@@ -264,13 +264,13 @@ def format_annovar(vcf_path, out_path):
 	
 	for line in zopen(vcf_path):
 		if line.startswith(('CHROM', '#')):
-			headers = line[:-1].split('\t')
+			headers = line.rstrip('\n').split('\t')
 			headers[1] = 'START'
 			headers.insert(2, 'END')
 			out.write('\t'.join(headers) + '\n')
 			continue
 			
-		cols = line[:-1].split('\t')
+		cols = line.rstrip('\n').split('\t')
 		cols.insert(2, cols[1])    # Add end coordinate
 		ref = cols[3]; alt = cols[4]
 
@@ -327,7 +327,7 @@ def variant_filter(vcf_path, nonsynonymous, no_1000g):
 
 		if nonsynonymous:
 			if not cols[col_exonic_func].startswith(
-				('nonsynonymous', 'frameshift', 'stopgain', 'stoploss')):
+				('nonsynonymous', 'frameshift', 'stopgain', 'stoploss', 'nonframeshift')):
 				continue
 
 		if no_1000g:

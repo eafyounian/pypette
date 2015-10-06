@@ -532,7 +532,7 @@ def sam_flags(flags):
 
 def sam_statistics(bam_paths):
 	samples = [re.sub('\.bam$', '', s) for s in bam_paths]
-	print('SAMPLE\tTOTAL READS\tALIGNED READS\tALIGNED READS WITH ALIGNED MATE\tALIGNED READS WITH CONCORDANT MATE\tMITOCHONDRIAL')
+	print('SAMPLE\tTOTAL READS\tALIGNED READS\tALIGNED READS WITH ALIGNED MATE\tALIGNED READS WITH CONCORDANT MATE\tMITOCHONDRIAL\tDUPLICATES')
 
 	for bam_path in bam_paths:
 		total = -1
@@ -540,10 +540,14 @@ def sam_statistics(bam_paths):
 		aligned_with_aligned_mate = -1
 		aligned_with_concordant_mate = -1
 		mitochondrial = -1
+		duplicates = -1
 
 		for line in shell_stdout('samtools flagstat %s' % bam_path):
 			m = re.search(r'(\d+) \+ (\d+) in total', line)
 			if m: total = int(m.group(1)) + int(m.group(2))
+
+			m = re.search(r'(\d+) \+ (\d+) duplicates', line)
+			if m: duplicates = int(m.group(1)) + int(m.group(2))
 			
 			m = re.search(r'(\d+) \+ (\d+) mapped', line)
 			if m: aligned = int(m.group(1)) + int(m.group(2))
@@ -560,14 +564,15 @@ def sam_statistics(bam_paths):
 			mitochondrial = int(line)
 			break
 
-		print('%s\t%d\t%d (%.1f%%)\t%d (%.1f%%)\t%d (%.1f%%)\t%d (%.1f%%)' % (
+		print('%s\t%d\t%d (%.1f%%)\t%d (%.1f%%)\t%d (%.1f%%)\t%d (%.1f%%)\t%d' % (
 			re.sub('\.bam$', '', bam_path), total,
 			aligned, float(aligned) / total * 100,
 			aligned_with_aligned_mate,
 			float(aligned_with_aligned_mate) / total * 100,
 			aligned_with_concordant_mate,
 			float(aligned_with_concordant_mate) / total * 100,
-			mitochondrial, float(mitochondrial) / total * 100)) 
+			mitochondrial, float(mitochondrial) / total * 100,
+			duplicates)) 
 
 
 
