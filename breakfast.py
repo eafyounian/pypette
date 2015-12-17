@@ -5,8 +5,7 @@ BreakFast is a toolkit for detecting chromosomal rearrangements
 based on whole genome sequencing data.
 
 Usage:
-breakfast detect <bam_file> <genome> <out_prefix> [-a N] [-f N] [-q N]
-	[-d N] [-O orientation]
+breakfast detect <bam_file> <genome> <out_prefix> [-a N] [-f N] [-q N] [-O OR]
 breakfast detect specific [-A] <bam_file> <donors> <acceptors> <genome>
 	<out_prefix>
 breakfast filter <sv_file> [-r P-S-A]... [--blacklist=PATH]
@@ -25,7 +24,6 @@ Options:
                           split reads are not used [default: 0].
   -f, --max-frag-len=N    Maximum fragment length [default: 5000].
   -q, --min-mapq=N        Minimum mapping quality to consider [default: 15].
-  -d, --min-distance=N    Min kb distance between breakpoints [default: 10].
   -O, --orientation=OR    Read pair orientation produced by sequencer. Either
                           'fr' (converging), 'rf' (diverging) or 'ff'
                           [default: fr].
@@ -90,7 +88,7 @@ sv_file_header = (
 # BREAKFAST DETECT #
 ####################
 
-def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
+def detect_discordant_pairs(sam_path, out_prefix, max_frag_len,
 	min_mapq, orientation):
 	
 	out = zopen(out_prefix + '.discordant_pairs.tsv.gz', 'w')
@@ -103,8 +101,8 @@ def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
 	info('Searching for discordant read pairs...')
 	prev = ['']
 	for line in shell_stdout(
-		'sam discordant pairs -q%d %s %d | sort -k1,1 -T %s' %
-		(min_mapq, sam_path, min_rearrangement_size / 1000, sort_tmp_dir)):
+		'sam discordant pairs -O %s -q%d %s %d | sort -k1,1 -T %s' %
+		(orientation, min_mapq, sam_path, max_frag_len, sort_tmp_dir)):
 		
 		al = line.split('\t')
 		if len(al) < 9: continue
@@ -131,6 +129,8 @@ def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
 
 		if not chr.startswith('chr'): chr = 'chr' + chr
 		if not mchr.startswith('chr'): mchr = 'chr' + mchr
+
+		if chr == 'chrM' or mchr == 'chrM': continue  # Discard mitochondrial
 
 		if orientation == 'fr':
 			# Reorient pairs so that the first mate is always upstream.
@@ -187,10 +187,10 @@ def detect_discordant_pairs(sam_path, out_prefix, min_rearrangement_size,
 
 
 
-def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
-	min_rearrangement_size):
+def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
+	max_frag_len):
 	
-	out = zopen(out_prefix + '.discordant_singles.tsv.gz', 'w')
+	out = zopen(out_prefix + '.discordant_reads.tsv.gz', 'w')
 	N = 0
 	
 	info('Splitting unaligned reads into %d bp anchors and aligning against '
@@ -203,8 +203,6 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 		'bowtie -f -p1 -v0 -m1 -B1 --suppress 5,6,7,8 %s -'
 		% (sam_path, anchor_len, genome_path))
 	
-	# FIXME: Would be nice to do this one chromosome at a time, so we wouldn't
-	# need to use 3 gigabytes of memory.
 	chromosomes = read_flat_seq(genome_path)
 	for chr in list(chromosomes.keys()):
 		if not chr.startswith('chr'):
@@ -233,8 +231,7 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 		if not mchr.startswith('chr'): mchr = 'chr' + mchr
 
 		# Ignore anchor pairs where the anchors are too close.
-		if chr == mchr and abs(pos - mpos) < min_rearrangement_size:
-			continue
+		if chr == mchr and abs(pos - mpos) < full_len: continue
 			
 		# Ignore rearrangements involving mitochondrial DNA.
 		if 'M' in chr or 'M' in mchr: continue
@@ -330,25 +327,24 @@ def detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
 
 
 def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
-	min_rearrangement_size, min_mapq, orientation, max_frag_len, 
-	discard_pcr_duplicates=True):
+	min_mapq, orientation, max_frag_len, discard_pcr_duplicates=True):
 	
 	if not os.path.exists(sam_path):
 		error('File %s does not exist.' % sam_path)
 	
 	detect_discordant_pairs(sam_path, out_prefix,
-		min_rearrangement_size=min_rearrangement_size, min_mapq=min_mapq,
+		max_frag_len=max_frag_len, min_mapq=min_mapq,
 		orientation=orientation)
 	
 	# Execute split read analysis if the user has specified an anchor length.
 	if anchor_len > 0:
-		detect_discordant_mates(sam_path, genome_path, out_prefix, anchor_len,
-			min_rearrangement_size=min_rearrangement_size)
+		detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
+			max_frag_len=max_frag_len)
 	
 	info('Sorting discordant pairs by chromosomal position...')
 	sort_inputs = '<(gunzip -c %s.discordant_pairs.tsv.gz)' % out_prefix
 	if anchor_len > 0:
-		sort_inputs +=' <(gunzip -c %s.discordant_singles.tsv.gz)' % out_prefix
+		sort_inputs +=' <(gunzip -c %s.discordant_reads.tsv.gz)' % out_prefix
 
 	sort_tmp_dir = os.path.dirname(out_prefix)
 	if not sort_tmp_dir: sort_tmp_dir = './'
@@ -588,13 +584,13 @@ def distance_to_gene(sv_pos, gene_pos):
 
 def annotate_variants(sv_path, bed_path):
 	features = []
-	bed_file = open(bed_path)
+	bed_file = zopen(bed_path)
 	for line in bed_file:
 		c = line.rstrip().split('\t')
 		features.append((c[0], c[5], (int(c[1]), int(c[2])), c[3]))
 	
 	print(sv_file_header)
-	sv_file = open(sv_path)
+	sv_file = zopen(sv_path)
 	for line in sv_file:
 		if not line.startswith('chr'): continue
 		
@@ -972,7 +968,6 @@ if __name__ == '__main__':
 			args['<out_prefix>'],
 			anchor_len=int(args['--anchor-len']),
 			min_mapq=int(args['--min-mapq']),
-			min_rearrangement_size=int(args['--min-distance'])*1000,
 			orientation=args['--orientation'],
 			max_frag_len=int(args['--max-frag-len']))
 	elif args['filter'] and args['distance']:
