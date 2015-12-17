@@ -7,7 +7,6 @@ Usage:
   coverage grid <genome_file> <window_size> [-s N]
   coverage cds <bam_file> <gtf_file>
   coverage telomere <bam_file>
-  coverage logratio <test_wig> <ref_wig> <min_ref>
   coverage downsample <wig_file> <fold>
   coverage sum <wig_files>...
   coverage unbias logratios <wig_file>
@@ -160,40 +159,6 @@ def coverage_telomere(bam_path):
 	
 	print('%s\t%d' % (bam_path, telo_count))
 
-
-
-
-#####################
-# COVERAGE LOGRATIO #
-#####################
-
-def coverage_logratio(test_wig_path, ref_wig_path, min_ref=1):
-	if min_ref <= 0: error('<min_ref> must be a positive number.')
-	
-	test_wig = zopen(test_wig_path)
-	ref_wig = zopen(ref_wig_path)
-
-	while True:
-		try:
-			test_line = next(test_wig)
-			ref_line = next(ref_wig)
-		except: break
-		if test_line[0] == 'f' and test_line.startswith('fixedStep'):
-			test_header = parse_wig_header(test_line)
-			ref_header = parse_wig_header(ref_line)
-			if test_header != ref_header: error('Header mismatch')
-			chr, start, step, span = test_header
-			print('fixedStep chrom=%s start=%d step=%d%s' % (chr,
-				start, step, (' span=%d' % span) if span > 0 else ''))
-			continue
-
-		ref_count = float(ref_line)
-		if ref_count < min_ref:
-			print('NaN')
-		else:
-			print('%.2f' % math.log(float(test_line) / float(ref_line), 2))
-
-
 	
 		
 	
@@ -340,9 +305,6 @@ if __name__ == '__main__':
 		coverage_cds(args['<bam_file>'], args['<gtf_file>'])
 	elif args['telomere']:
 		coverage_telomere(args['<bam_file>'])
-	elif args['logratio']:
-		coverage_logratio(args['<test_wig>'], args['<ref_wig>'],
-			min_ref=float(args['<min_ref>']))
 	elif args['downsample']:
 		coverage_downsample(args['<wig_file>'], int(args['<fold>']))
 	elif args['sum']:
