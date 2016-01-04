@@ -192,7 +192,6 @@ def ensembl_cleanup(gtf_path):
 
 if __name__ == '__main__':
 	args = docopt.docopt(__doc__)
-	print(args)
 
 	if args['--protein-coding']:
 		accepted_gene_types = ['protein_coding']

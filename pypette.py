@@ -121,7 +121,7 @@ def argsort(seq):
 def natural_sorted(seq):
     alphanum_key = lambda key: [ int(c) if c.isdigit() else c.lower()
     	for c in re.split('([0-9]+)', key) ] 
-    return sorted(seq, key = alphanum_key)
+    return sorted(seq, key=alphanum_key)
 
 def flatten(seq_of_seq):
 	return list(itertools.chain(*seq_of_seq))
