@@ -105,7 +105,7 @@ def cghub_download(samples):
 			continue
 		
 		info('Downloading %s...' % filename)
-		shell('gtdownload -v -d %s -c ~/tools/genetorrent*/cghub_20141030.key' % sample.analysis_data_uri)
+		shell('gtdownload -v -d %s -c ~/tools/genetorrent*/cghub_2016.key' % sample.analysis_data_uri)
 			
 		
 
