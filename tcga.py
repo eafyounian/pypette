@@ -31,11 +31,14 @@ def tumor_normal_pairs(samples_path):
 
 	for psamples in patients.values():
 		tumors = [s for s in psamples if re.search('TCGA-..-....-0[12]', s)]
-		normals = [s for s in psamples if re.search('TCGA-..-....-1[01]', s)]
+		bloods = [s for s in psamples if re.search('TCGA-..-....-10', s)]
+		adj_normals = [s for s in psamples if re.search('TCGA-..-....-11', s)]
+		if bloods:
+			best_normal = bloods[0]
+		elif adj_normals:
+			best_normal = adj_normals[0]
 		for tumor in tumors:
-			for normal in normals:
-				sys.stdout.write('%s,%s ' % (tumor, normal))
-	print()
+			print('%s,%s' % (tumor, best_normal))
 
 	
 
