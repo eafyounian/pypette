@@ -19,7 +19,6 @@ from __future__ import print_function
 import sys, docopt, re, os, itertools
 from collections import defaultdict, namedtuple
 from pypette import info, shell, zopen, mkdir, error, read_flat_seq, revcomplement
-import numpy as np
 
 
 
@@ -33,7 +32,7 @@ import numpy as np
 
 class MergedFeature:
 	def __init__(self, num_samples):
-		self.expr = np.zeros(num_samples)
+		self.expr = [0] * num_samples
 		self.total_len = 0
 		self.chromosome = ''
 		self.start = -1
@@ -42,20 +41,20 @@ class MergedFeature:
 def summarize(exon_expr_path):
 	file = zopen(exon_expr_path)
 	header = next(file)
-	samples = header.rstrip().split('\t')[4:]
+	samples = header.rstrip('\n').split('\t')[4:]
 	S = len(samples)
 	
 	features = {}
 	for line in file:
-		cols = line.rstrip().split('\t')
+		cols = line.rstrip('\n').split('\t')
 		if len(cols) < S: continue
 		chr = cols[0]
 		start = int(cols[1]) + 1
 		end = int(cols[2])
-		expr = np.array([float(x) for x in cols[4:]])
+		expr = [float(x) for x in cols[4:]]
 		
 		f = features.setdefault(cols[3], MergedFeature(S))
-		f.expr += expr
+		f.expr = [a + b for a, b in zip(f.expr, expr)]
 		f.total_len += end - start + 1
 		f.chromosome = chr
 		if f.start == -1 or f.start > start: f.start = start
