@@ -4,9 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <stdint.h>
 
 #undef assert
-#define assert(cond) if (!(cond)) { fprintf(stderr, "Assert '%s' failed in %s, line %d.\n", #cond, __FILE__, __LINE__); exit(-1); } 
+#define assert(cond) if (!(cond)) { fprintf(stderr, "Assert '%s' failed in %s, line %d.\nError encountered while parsing line %d of pileup.\n", #cond, __FILE__, __LINE__, line_num); exit(-1); } 
 
 #define MAX_ALLELE_LEN 32
 #define MAX_ALLELES 100
@@ -25,6 +26,7 @@ typedef struct {
 } AlleleList;
 
 int min_mapq = 0;
+uint64_t line_num = 0;       // Line number
 
 void count_allele(char* allele, int len, char quality, AlleleList* list) {
 	quality = quality - 33;
@@ -42,8 +44,9 @@ void count_allele(char* allele, int len, char quality, AlleleList* list) {
 		}
 	}
 	
-	// Did not find our allele. Add a new one.
-	assert(list->total < MAX_ALLELES);
+	// Haven't seen this allele yet. Add it to the list unless there's
+	// already too many alleles at this position.
+	if (list->total >= MAX_ALLELES) goto cleanup;
 	list->alleles[list->total].high_count = (quality >= min_mapq);
 	list->alleles[list->total].low_count = (quality < min_mapq);
 	strncpy(list->alleles[list->total].seq, allele, MAX_ALLELE_LEN); 
@@ -91,6 +94,8 @@ int parse_pileup(char* bases, char* quality, AlleleList* alleles) {
 				count_allele(allele, len, quality[j++], alleles);
 			}
 			i += len;
+		} else if (bases[i] == 'N') {
+			// Unknown bases should not count towards the total.
 		} else {
 			//assert(bases[i] == 'A' || bases[i] == 'C' || bases[i] == 'G' || bases[i] == 'T' || bases[i] == '.');
 			count_allele(bases + i, 1, quality[j++], alleles);
@@ -129,6 +134,8 @@ int main(int argc, char** argv) {
 	// Expected format is:
 	// CHROMOSOME, POSITION, REF, [READ_COUNT, READ_BASES, BASEQ, MAPQ]+
 	while (getline(&line, &line_buf_size, stdin) != -1) {
+		line_num += 1;
+
 		// Find all tab characters.
 		int ntabs = 0;
 		for (int i = 0; line[i]; i++) {
