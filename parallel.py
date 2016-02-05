@@ -53,17 +53,6 @@ def sanitize_path(path):
 def parallel(command, job_name, max_workers, cpus, memory, partition,
 	time_limit):
 	
-	if partition == 'local' and socket.gethostname() == 'merope.local':
-		error('ERROR: Running jobs on the Merope gateway is not allowed.')
-
-	# SLURM uses environment variables to know when "srun" is being run
-	# from inside a running job. By removing these environment variables,
-	# we force SLURM to create an independent new job.
-	#if 'SLURM_JOB_ID' in os.environ:
-	#	for key in os.environ.keys():
-	#		if key.startswith('SLURM_'): del os.environ[key]
-	#	info('Hiding SLURM environment variables...')
-	
 	# Allow splitting the command string onto multiple lines.
 	command = command.replace('\n', ' ')
 	
@@ -72,11 +61,7 @@ def parallel(command, job_name, max_workers, cpus, memory, partition,
 		# The command must not contain $x.
 		if '$x' in command or '${x' in command:
 			error('Command contains $x but no targets provided.')
-		
 		targets = ['']
-		info('Running job "%s" on %s partition (with %d %s and '
-			'%d GB of memory).' % (job_name, partition, cpus,
-			'CPUs' if cpus != 1 else 'CPU', memory))
 	else:
 		# Parse whitespace-delimited target items from standard input.
 		targets = []
@@ -86,16 +71,20 @@ def parallel(command, job_name, max_workers, cpus, memory, partition,
 		
 		if not targets: error('Command requires targets but none provided.')
 	
-		info('Distributing %d %s named "%s" on %s partition '
-			'(with %d %s and %d GB of memory per job).' % (
-			len(targets), 'jobs' if len(targets) != 1 else 'job',
-			job_name, partition, cpus, 'CPUs' if cpus != 1 else 'CPU', memory))
-	
 	if len(set(targets)) < len(targets):
 		error('Target list contains multiple instances of the following targets:\n' + '\n'.join(s for s in set(targets)
 			if targets.count(s) > 1))
 
 	if max_workers > len(targets): max_workers = len(targets)
+
+	if partition != 'local':
+		info('Distributing %d %s named "%s" on %s partition '
+			'(with %d %s and %d GB of memory per job).' % (
+			len(targets), 'jobs' if len(targets) != 1 else 'job',
+			job_name, partition, cpus, 'CPUs' if cpus != 1 else 'CPU', memory))
+	else:
+		info('Starting %d %s named "%s" on local machine.' % (
+			len(targets), 'jobs' if len(targets) != 1 else 'job', job_name))
 
 	log_dir = os.path.expanduser('~/.jobs/%s_%s' % (job_name, 
 		datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))
@@ -124,8 +113,6 @@ def parallel(command, job_name, max_workers, cpus, memory, partition,
 
 	
 
-		
-			
 
 def parallel_worker(log_dir):
 	with open('%s/tasks' % log_dir) as f:
