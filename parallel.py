@@ -23,14 +23,13 @@ Options:
                        [default: 5].
   -t --time=N          Time limit in hours for the full analysis [default: 72].
   -J --job-name=NAME   Job name shown by SLURM [default: job].
-  -P --partition=NAME  SLURM partition on which to run jobs [default: serial].
+  -P --partition=NAME  SLURM partition on which to run jobs [default: env].
 
 """
 
 from __future__ import print_function
-import subprocess, sys, re, docopt, socket, os, datetime, time
-from pypette import shell, info, error, open_exclusive, daemonize
-from pypette import natural_sorted
+import subprocess, sys, docopt, os, datetime
+from pypette import shell, info, error, open_exclusive, natural_sorted
 
 sbatch_template = '''#!/bin/bash -l
 #SBATCH -p %s
@@ -148,8 +147,10 @@ if __name__ == '__main__':
 		exit()
 	
 	args = docopt.docopt(__doc__)
+	partition = args['--partition']
+	if partition == 'env': partition = os.environ['PARALLEL_PARTITION']
 	parallel(args['<command>'], job_name=args['--job-name'],
 		max_workers=int(args['--workers']), cpus=int(args['--cpus']),
-		memory=int(args['--memory']), partition=args['--partition'],
+		memory=int(args['--memory']), partition=partition,
 		time_limit=int(args['--time']))
 
