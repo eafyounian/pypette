@@ -106,7 +106,7 @@ def parallel(command, job_name, max_workers, cpus, memory, partition,
 		workers = [subprocess.Popen(['sbatch', '-Q'], stdin=subprocess.PIPE)
 			for p in range(max_workers)]
 		for w in workers:
-			w.stdin.write(sbatch_script)
+			w.stdin.write(sbatch_script.encode('utf-8'))
 			w.stdin.close()
 		for w in workers: w.wait()
 
