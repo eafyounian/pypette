@@ -17,7 +17,6 @@ from __future__ import print_function
 import sys, subprocess, docopt, re, datetime, pwd, os
 from collections import Counter, defaultdict
 from pypette import read_fasta, error, info, zopen
-import numpy as np
 
 def write_fasta(seq_dict, fasta_path):
 	fasta = open(fasta_path, 'w')
@@ -41,7 +40,7 @@ def smallrna_expression(read_paths, srna_reference_path):
 	# variants of these small RNA sequences.
 	info('Constructing database of reference small RNA sequences...')
 	seq_names = defaultdict(lambda: '')
-	counts = defaultdict(lambda: np.zeros(S))
+	counts = defaultdict(lambda: [0]*S)
 
 	for name, seq in read_fasta(srna_reference_path).iteritems():
 		name = re.sub(' MIMAT.*', '', name)
@@ -83,7 +82,7 @@ def smallrna_expression_bgi(count_paths, srna_reference_path):
 	# construct a new FASTA file that includes potential isoforms and
 	# variants of these small RNA sequences.
 	seq_names = defaultdict(lambda: '')
-	counts = defaultdict(lambda: np.zeros(S))
+	counts = defaultdict(lambda: [0]*S)
 	for name, seq in read_fasta(srna_reference_path).iteritems():
 		name = re.sub(' MIMAT.*', '', name)
 		seq = seq.upper().replace('U', 'T')
