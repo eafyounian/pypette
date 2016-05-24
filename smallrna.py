@@ -102,7 +102,7 @@ def smallrna_expression_bgi(count_paths, srna_reference_path):
 	
 	print('NAME\tSEQUENCE\t%s' % '\t'.join(count_paths))
 	for seq in sorted(counts.iterkeys(), key=lambda x: seq_names[x]):
-		if seq_names[seq] == '' and sum(counts[seq] >= min_other_reads) < 2:
+		if seq_names[seq] == '' and sum(c >= min_other_reads for c in counts[seq]) < 2:
 			continue
 		sys.stdout.write('%s\t%s' % (seq_names[seq], seq))
 		for x in counts[seq]: sys.stdout.write('\t%d' % x)
