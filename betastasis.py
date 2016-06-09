@@ -1,4 +1,4 @@
-#!/bin/env pypy
+#!/bin/env python
 
 """
 Tools for creating Betastasis-compatible files.
@@ -43,23 +43,20 @@ class Archive:
 def gene_expression(expr_path, sqlite_path):
 	file = zopen(expr_path)
 	header = next(file)
-	sample_col = 5
-	samples = header[:-1].split('\t')[sample_col:]
-	samples = [re.sub('.bam$', '', s, re.I) for s in samples]
-	
-	hugos = []
+	samples = header.rstrip().split('\t')[1:]
+	genes = []
 
 	archive = Archive(sqlite_path, 'w')
 	for n, line in enumerate(file):
-		cols = line[:-1].split('\t')
-		hugo = re.sub(':ENSG.*', '', cols[3]) 
-		archive.add('gene/' + hugo, {
-			'chromosome': cols[0], 'start': int(cols[1]), 'end': int(cols[2]),
-			'expression': [float(c) for c in cols[sample_col:]]
+		cols = line.rstrip().split('\t')
+		gene = cols[0]
+		archive.add('gene/' + gene, {
+#			'chromosome': cols[0], 'start': int(cols[1]), 'end': int(cols[2]),
+			'expression': [float(c) for c in cols[1:]]
 		})
-		hugos.append(hugo)
+		genes.append(gene)
 	archive.add('clinical', { 'sample_id': samples })
-	archive.add('index', { 'genes': sorted(hugos) })
+	archive.add('index', { 'genes': sorted(genes) })
 	archive.close()
 
 
