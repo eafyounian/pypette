@@ -15,7 +15,7 @@ Usage:
   variant nonsynonymous <vcf_file>
   variant discard 1000g <vcf_file>
   variant merge <vcf_files>...
-  variant annotate <vcf_file>
+  variant annotate <vcf_file> [--genome=G]
   variant keep samples <vcf_file> <regex>
   variant discard samples <vcf_file> <regex>
   variant conservation <vcf_file>
@@ -38,6 +38,7 @@ Options:
   --hetz=N:R        Minimum evidence for heterozygous [default: 4:0.25]
   --homz=N:R        Minimum evidence for homozygous alt [default: 4:0.8]
   --keep-all        Show sites even if they are all homozygous reference
+  --genome=G        Genome version for annotations [default: hg19].
 """
 
 from __future__ import print_function
@@ -232,33 +233,41 @@ def variant_recall(vcf_path, options):
 # VARIANT ANNOTATE #
 ####################
 
-def variant_annotate(vcf_path):
+def num_lines(path):
+	lines = 0
+	for line in open(path): lines += 1
+	return lines
+
+def variant_annotate(vcf_path, genome):
 	format_annovar(vcf_path, 'anno_tmp.vcf')
-	shell('table_annovar.pl anno_tmp.vcf ~/tools/annovar-170715/humandb '
-		'-buildver hg19 --remove --otherinfo --outfile annotated '
+	shell('table_annovar.pl anno_tmp.vcf ~/tools/annovar-2016-02-01/humandb '
+		'-buildver %s --remove --otherinfo --outfile annotated '
 		'-operation g,f,f,f '
-		'-protocol refGene,cosmic70,1000g2014oct_all,esp6500si_all')
-	
-	anno = open('annotated.hg19_multianno.txt')
+		'-protocol refGene,cosmic70,1000g2014oct_all,exac03' % genome)
+
+	anno = open('annotated.%s_multianno.txt' % genome)
 	out = zopen('annotated.vcf.gz', 'w')
 	anno.next()
 	line = anno.next()
-	headers = ['CHROM', 'POSITION', 'REF', 'ALT', 'FUNCTION', 'NEARBY_GENES',
-		'EXONIC_FUNCTION', 'AA_CHANGE', 'COSMIC', '1000G', 'ESP6500']
-	headers += line.rstrip('\n').split('\t')[13:]
+	headers = ['CHROM', 'POSITION', 'REF', 'ALT', 'FUNCTION', 'GENE',
+		'EXONIC_FUNCTION', 'AA_CHANGE', 'COSMIC', '1000G', 'EXAC']
+	headers += line.rstrip('\n').split('\t')[20:]
 	out.write('\t'.join(headers) + '\n')
 	for line in anno:
-		tokens = line.rstrip('\n').split('\t')
-		out.write('\t'.join(tokens[0:2] + tokens[3:7] + tokens[8:]))
+		c = line.rstrip('\n').split('\t')
+		out.write('\t'.join(c[0:2] + c[3:7] + c[8:13] + c[20:]))
 		out.write('\n')
 	out.close()
 
 	os.remove('anno_tmp.vcf')
-	os.remove('annotated.hg19_multianno.txt')
-	os.remove('annotated.invalid_input')
-	os.remove('annotated.refGene.invalid_input')
-	
-	
+	os.remove('annotated.%s_multianno.txt' % genome)
+	if num_lines('annotated.invalid_input') <= 1:
+		os.remove('annotated.invalid_input')
+	if num_lines('annotated.refGene.invalid_input') <= 1:
+		os.remove('annotated.refGene.invalid_input')
+
+
+
 def format_annovar(vcf_path, out_path):
 	out = open(out_path, 'w')
 	
@@ -1056,7 +1065,7 @@ if __name__ == '__main__':
 	elif args['recall']:
 		variant_recall(args['<vcf_file>'], Options(args))
 	elif args['annotate']:
-		variant_annotate(args['<vcf_file>'])
+		variant_annotate(args['<vcf_file>'], genome=args['--genome'])
 	elif args['somatic']:
 		somatic(args['<vcf_file>'], args['<tumor,normal>'])
 	elif args['discard'] and args['in'] and args['controls']:
