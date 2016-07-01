@@ -70,8 +70,7 @@ def gene_expression(expr_path, sqlite_path):
 def small_rna_expression(expr_path, sqlite_path):
 	file = zopen(expr_path)
 	header = next(file)
-	sample_col = 3
-	samples = header[:-1].split('\t')[sample_col:]
+	samples = header[:-1].split('\t')[1:]
 	samples = [re.sub('.bam$', '', s, re.I) for s in samples]
 	
 	names = []
@@ -80,8 +79,7 @@ def small_rna_expression(expr_path, sqlite_path):
 	for n, line in enumerate(file):
 		cols = line[:-1].split('\t')
 		archive.add('gene/' + cols[0], {
-			'sequence': cols[1],
-			'expression': [float(c) for c in cols[sample_col:]]
+			'expression': [float(c) for c in cols[1:]]
 		})
 		names.append(cols[0])
 	archive.add('clinical', { 'sample_id': samples })
