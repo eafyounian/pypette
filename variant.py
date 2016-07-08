@@ -238,12 +238,13 @@ def num_lines(path):
 	for line in open(path): lines += 1
 	return lines
 
-def variant_annotate(vcf_path, genome):
+def variant_annotate(vcf_path, genome='~/tools/annovar-2016-02-01/humandb/hg38'):
 	format_annovar(vcf_path, 'anno_tmp.vcf')
-	shell('table_annovar.pl anno_tmp.vcf ~/tools/annovar-2016-02-01/humandb '
-		'-buildver %s --remove --otherinfo --outfile annotated '
-		'-operation g,f,f,f '
-		'-protocol refGene,cosmic70,1000g2014oct_all,exac03' % genome)
+	humandb_dir, genome_version = os.path.split(genome)
+	shell('table_annovar.pl anno_tmp.vcf %s -buildver %s --remove --otherinfo '
+		'--outfile annotated -operation g,f,f,f '
+		'-protocol refGene,cosmic70,1000g2014oct_all,exac03' %
+		(humandb_dir, genome_version))
 
 	anno = open('annotated.%s_multianno.txt' % genome)
 	out = zopen('annotated.vcf.gz', 'w')
@@ -260,7 +261,7 @@ def variant_annotate(vcf_path, genome):
 	out.close()
 
 	os.remove('anno_tmp.vcf')
-	os.remove('annotated.%s_multianno.txt' % genome)
+	os.remove('annotated.%s_multianno.txt' % genome_version)
 	if num_lines('annotated.invalid_input') <= 1:
 		os.remove('annotated.invalid_input')
 	if num_lines('annotated.refGene.invalid_input') <= 1:
