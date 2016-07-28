@@ -9,7 +9,7 @@
 #undef assert
 #define assert(cond) if (!(cond)) { fprintf(stderr, "Assert '%s' failed in %s, line %d.\nError encountered while parsing line %d of pileup.\n", #cond, __FILE__, __LINE__, line_num); exit(-1); } 
 
-#define MAX_ALLELE_LEN 32
+#define MAX_ALLELE_LEN 64
 #define MAX_ALLELES 100
 #define MAX_SAMPLES 5000
 #define MAX_TABS_ON_LINE (5 + 4*MAX_SAMPLES)
@@ -93,7 +93,7 @@ int parse_pileup(char* bases, char* quality, AlleleList* alleles) {
 				allele -= 2; len += 2;  // Include pre-base and sign
 				count_allele(allele, len, quality[j++], alleles);
 			}
-			i += len;
+			i = (allele - bases) + len - 1;
 		} else if (bases[i] == 'N') {
 			// Unknown bases should not count towards the total.
 		} else {
