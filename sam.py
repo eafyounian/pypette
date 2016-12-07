@@ -10,8 +10,8 @@ Usage:
   sam discordant pairs [-q N] [-O OR] <bam_file> <max_frag_size>
   sam fragments <bam_file> <max_frag_len>
   sam read length <bam_file>
-  sam pileup each <vcf_file> <bam_files>... [--quality=N]
-  sam pileup <region> <bam_files>... [--quality=N]
+  sam pileup each <vcf_file> <bam_files>... [--min-mapq=N]
+  sam pileup <region> <bam_files>... [--min-mapq=N]
   sam count <bed_file> <bam_file>
   sam merge counts <bed_file> <count_files>...
   sam fragment lengths <bam_file>
@@ -22,7 +22,7 @@ Usage:
 Options:
   -h --help             Show this screen.
   -r --raw              Output in raw sequence format.
-  -q --quality=N        Minimum alignment quality [default: 15].
+  -q --min-mapq=N       Minimum alignment quality [default: 15].
   -s --strand=M         Strand specific read counts [default: none].
   -O --orientation=OR   Read pair orientation (ff/fr) [default: fr].
 """
@@ -623,7 +623,7 @@ if __name__ == '__main__':
 		sam_compact(args['<bam_file>'])
 	elif args['discordant'] and args['pairs']:
 		sam_discordant_pairs(args['<bam_file>'], int(args['<max_frag_size>']),
-			orientation=args['--orientation'], min_mapq=int(args['--quality']))
+			orientation=args['--orientation'], min_mapq=int(args['--min-mapq']))
 	elif args['fragments']:
 		sam_fragments(args['<bam_file>'], int(args['<max_frag_len>']))
 	elif args['read'] and args['length']:
@@ -632,10 +632,10 @@ if __name__ == '__main__':
 		else: print('%d' % read_len)
 	elif args['pileup'] and args['each']:
 		sam_pileup_each(args['<vcf_file>'], args['<bam_files>'],
-			min_al_quality=int(args['--quality']))
+			min_al_quality=int(args['--min-mapq']))
 	elif args['pileup']:
 		sam_pileup(args['<region>'], args['<bam_files>'],
-			min_al_quality=int(args['--quality']))
+			min_al_quality=int(args['--min-mapq']))
 	elif args['count']:
 		sam_count(args['<bam_file>'], args['<bed_file>'])
 	elif args['counts'] and args['merge']:
