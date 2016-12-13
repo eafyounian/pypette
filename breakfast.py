@@ -101,8 +101,8 @@ def detect_discordant_pairs(sam_path, out_prefix, max_frag_len,
 	info('Searching for discordant read pairs...')
 	prev = ['']
 	for line in shell_stdout(
-		'sam discordant pairs -O %s -q%d %s %d | sort -k1,1 -T %s' %
-		(orientation, min_mapq, sam_path, max_frag_len, sort_tmp_dir)):
+		'sam discordant pairs --min-mapq=%d %s %d | sort -k1,1 -T %s' %
+		(min_mapq, sam_path, max_frag_len, sort_tmp_dir)):
 		
 		al = line.split('\t')
 		if len(al) < 9: continue
@@ -111,7 +111,8 @@ def detect_discordant_pairs(sam_path, out_prefix, max_frag_len,
 		# FIXME: Add support for spliced RNA-seq reads.
 		if 'N' in al[5] or 'S' in al[5]: continue
 		
-		if al[0][-2] == '/': al[0] = al[0][:-2]   # Remove /1 or /2 suffix
+		if al[0].endswith('/1') or al[0].endswith('/2'):
+			al[0] = al[0][:-2]   # Remove /1 or /2 suffix
 		
 		if al[0] != prev[0]:
 			prev = al
@@ -187,8 +188,7 @@ def detect_discordant_pairs(sam_path, out_prefix, max_frag_len,
 
 
 
-def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
-	max_frag_len):
+def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len):
 	
 	out = zopen(out_prefix + '.discordant_reads.tsv.gz', 'w')
 	N = 0
@@ -199,7 +199,7 @@ def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
 	# IMPORTANT: Only one thread can be used, otherwise alignment order is not
 	# guaranteed and the loop below will fail.
 	anchor_alignments = shell_stdout(
-		'sam unaligned reads %s | fasta split interleaved - %d | '
+		'samtools fasta -f 0x4 %s | fasta split interleaved - %d | '
 		'bowtie -f -p1 -v0 -m1 -B1 --suppress 5,6,7,8 %s -'
 		% (sam_path, anchor_len, genome_path))
 	
@@ -210,7 +210,6 @@ def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
 	
 	prev = ['']
 	for line in anchor_alignments:
-		
 		al = line.split('\t')
 		if al[0][-2] == '/': al[0] = al[0][:-2]
 		
@@ -231,7 +230,8 @@ def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
 		if not mchr.startswith('chr'): mchr = 'chr' + mchr
 
 		# Ignore anchor pairs where the anchors are too close.
-		if chr == mchr and abs(pos - mpos) < full_len: continue
+		if chr == mchr and abs(pos - mpos) < full_len - anchor_len + 10:
+			continue
 			
 		# Ignore rearrangements involving mitochondrial DNA.
 		if 'M' in chr or 'M' in mchr: continue
@@ -265,7 +265,11 @@ def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
 		# If the read is at the very edge of a chromosome, ignore it.
 		if len(left_grch) < full_len or len(right_grch) < full_len:
 			continue
-		
+
+		# Make sure that reference sequences are in uppercase
+		left_grch = left_grch.upper()
+		right_grch = right_grch.upper()
+
 		#print('-------------------')
 		#print([chr, strand, pos, mchr, mstrand, mpos])
 		#print(seq)
@@ -293,7 +297,7 @@ def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
 			
 		# The best breakpoint placement cannot have more than N mismatches.
 		least_mismatches = min(mismatches)
-		if least_mismatches > 2: continue
+		#if least_mismatches > 2: continue
 		
 		# "br" represent the number of nucleotides in the read
 		# before the breakpoint, counting from the 5' end of the read.
@@ -338,8 +342,7 @@ def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 	
 	# Execute split read analysis if the user has specified an anchor length.
 	if anchor_len > 0:
-		detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len,
-			max_frag_len=max_frag_len)
+		detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len)
 	
 	info('Sorting discordant pairs by chromosomal position...')
 	sort_inputs = '<(gunzip -c %s.discordant_pairs.tsv.gz)' % out_prefix
@@ -395,8 +398,7 @@ def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 		
 		# Check if we already have a rearrangement that matches the new pair.
 		# We don't check the distance for the first mate because we already
-		# know from above the rearrangements near it. In comparing the strands,
-		# we assume that fragments are not oriented.
+		# know from above the rearrangements near it.
 		matches = [r for r in rearrangements if 
 			point_region_distance(mpos, r.mpos) <= max_frag_len and
 			chr == r.chr and mchr == r.mchr and
@@ -405,11 +407,6 @@ def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 		read = (pos, mpos, seq)
 		if matches:
 			for match in matches:
-				# Only the 3' boundary of the left mate can extend because
-				# the discordant pairs were ordered by left mate position.
-				match.pos = (match.pos[0], max(match.pos[1], pos))
-				match.mpos = (min(match.mpos[0], mpos),
-					max(match.mpos[1], mpos))
 				match.reads.append(read)
 				
 		else:
