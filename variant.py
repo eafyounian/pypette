@@ -246,7 +246,7 @@ def variant_annotate(vcf_path, genome='~/tools/annovar-2016-02-01/humandb/hg38')
 		'-protocol refGene,cosmic70,1000g2014oct_all,exac03' %
 		(humandb_dir, genome_version))
 
-	anno = open('annotated.%s_multianno.txt' % genome)
+	anno = open('annotated.%s_multianno.txt' % genome_version)
 	out = zopen('annotated.vcf.gz', 'w')
 	anno.next()
 	line = anno.next()
