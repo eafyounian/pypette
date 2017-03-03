@@ -6,6 +6,7 @@ based on whole genome sequencing data.
 
 Usage:
 breakfast detect <bam_file> <genome> <out_prefix> [-a N] [-f N] [-q N] [-O OR]
+    [--discard-duplicates=METHOD]
 breakfast detect specific [-A] <bam_file> <donors> <acceptors> <genome>
 	<out_prefix>
 breakfast filter <sv_file> [-r P-S-A]... [--blacklist=PATH]
@@ -29,6 +30,13 @@ Options:
                           [default: fr].
   -A, --all-reads         Use all reads for rearrangement detection, not just
                           unaligned reads.
+  --discard-duplicates=M  Method to use when discarding duplicate reads.
+                          'both-ends' considers a read pair (or unaligned read) to be a duplicate of another if the positions
+                          of both ends are a perfect match.
+                          'one-end' checks if at least one end has a matching
+                          position (useful if reads have been trimmed).
+                          'no' skips duplicate removal.
+                          [default: both-ends].
 
   --blacklist <list>      Path to a file containing blacklisted regions.
   -r, --min-reads=P-S-A   Minimum number of spanning reads required to accept
@@ -55,10 +63,10 @@ class Rearrangement(object):
 	def __init__(self, chr, strand, pos, mchr, mstrand, mpos, read):
 		self.chr = chr
 		self.strand = strand
-		self.pos = (pos, pos)
+		self.pos = pos
 		self.mchr = mchr
 		self.mstrand = mstrand
-		self.mpos = (mpos, mpos)
+		self.mpos = mpos
 		self.reads = [read]
 		
 	def id(self):
@@ -328,13 +336,33 @@ def detect_discordant_reads(sam_path, genome_path, out_prefix, anchor_len):
 	
 
 
+def discard_duplicates_both_ends(rearrangement):
+	seen = set()
+	unique = []
+	for r in rearrangement.reads:
+		if r[0:2] in seen: continue
+		unique.append(r)
+		seen.add(r[0:2])
+	rearrangement.reads = unique
+
+def discard_duplicates_one_end(rearrangement):
+	seen = set()
+	unique = []
+	for r in rearrangement.reads:
+		if r[0] in seen or r[1] in seen: continue
+		unique.append(r)
+		seen.add(r[0]); seen.add(r[1])
+	rearrangement.reads = unique
 
 
 def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
-	min_mapq, orientation, max_frag_len, discard_pcr_duplicates=True):
+	min_mapq, orientation, max_frag_len, discard_duplicates='both-ends'):
 	
 	if not os.path.exists(sam_path):
 		error('File %s does not exist.' % sam_path)
+
+	if not discard_duplicates in ('no', 'both-ends', 'one-end'):
+		error('Invalid duplicate discard method: %s' % discard_duplicates)
 	
 	detect_discordant_pairs(sam_path, out_prefix,
 		max_frag_len=max_frag_len, min_mapq=min_mapq,
@@ -355,16 +383,14 @@ def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 	shell('sort -k1,1 -k3,3n -T %s %s | gzip -c > %s.sorted_pairs.tsv.gz' %
 		(sort_tmp_dir, sort_inputs, out_prefix))
 	
-	def print_rearrangement(out, r, discard_pcr_duplicates):
-		if discard_pcr_duplicates:
-			r.reads = list(set(r.reads))
-			
+	def report_rearrangement(out, r):
+		if discard_duplicates == 'both-ends':
+			discard_duplicates_both_ends(r)
+		elif discard_duplicates == 'one-end':
+			discard_duplicates_one_end(r)
 		if len(r.reads) < 2: return 0
-		
-		pos = r.pos[1] if r.strand == '+' else r.pos[0]
-		mpos = r.mpos[1] if r.mstrand == '+' else r.mpos[0]
 		out.write('%s\t%s\t%d\t\t\t%s\t%s\t%d\t\t\t%d\t%d\t%s\n' % (
-			r.chr, r.strand, pos, r.mchr, r.mstrand, mpos,
+			r.chr, r.strand, r.pos, r.mchr, r.mstrand, r.mpos,
 			sum([read[2] == None for read in r.reads]),
 			sum([read[2] != None for read in r.reads]),
 			';'.join([read[2] for read in r.reads if read[2] != None])))
@@ -389,18 +415,19 @@ def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 		seq = None if al[6] == '-' else al[6]
 		
 		# Rearrangements that are too far need not be considered in the future
-		far = (r for r in rearrangements if pos - r.pos[1] > max_frag_len)
-		for r in far:
-			N += print_rearrangement(out, r, discard_pcr_duplicates)
-			
-		rearrangements = [r for r in rearrangements if
-			pos - r.pos[1] <= max_frag_len]
+		reachable = []
+		for r in rearrangements:
+			if pos - r.pos > max_frag_len:
+				N += report_rearrangement(out, r)
+			else:
+				reachable.append(r)
+		rearrangements = reachable
 		
 		# Check if we already have a rearrangement that matches the new pair.
 		# We don't check the distance for the first mate because we already
 		# know from above the rearrangements near it.
-		matches = [r for r in rearrangements if 
-			point_region_distance(mpos, r.mpos) <= max_frag_len and
+		matches = [r for r in rearrangements if
+			abs(mpos - r.mpos) <= max_frag_len and
 			chr == r.chr and mchr == r.mchr and
 			strand == r.strand and mstrand == r.mstrand]
 		
@@ -415,7 +442,7 @@ def detect_rearrangements(sam_path, genome_path, out_prefix, anchor_len,
 				chr, strand, pos, mchr, mstrand, mpos, read))
 	
 	for r in rearrangements:
-		N += print_rearrangement(out, r, discard_pcr_duplicates)
+		N += report_rearrangement(out, r)
 			
 	info('Found %d rearrangements with at least 2 reads of evidence.' % N)
 	
@@ -966,7 +993,8 @@ if __name__ == '__main__':
 			anchor_len=int(args['--anchor-len']),
 			min_mapq=int(args['--min-mapq']),
 			orientation=args['--orientation'],
-			max_frag_len=int(args['--max-frag-len']))
+			max_frag_len=int(args['--max-frag-len']),
+			discard_duplicates=args['--discard-duplicates'])
 	elif args['filter'] and args['distance']:
 		filter_distance(args['<sv_file>'], int(args['<min_distance>'])*1000)
 	elif args['filter'] and args['region']:
